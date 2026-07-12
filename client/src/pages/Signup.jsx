@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, Link, Navigate } from 'react-router-dom';
+import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { AlertCircle, Eye, EyeOff, Building2 } from 'lucide-react';
 
-const Login = () => {
+const Signup = () => {
   const { user, login } = useAuth();
   const navigate = useNavigate();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -22,10 +24,12 @@ const Login = () => {
     setIsSubmitting(true);
 
     try {
+      await api.post('/auth/signup', { name, email, password });
+      // Auto-login after successful signup
       await login(email, password);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      setError(err.response?.data?.message || 'Signup failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -45,11 +49,11 @@ const Login = () => {
             <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg mb-4">
               <Building2 size={32} className="text-white" />
             </div>
-            <h2 className="text-3xl font-bold text-white tracking-tight">Welcome Back</h2>
-            <p className="text-blue-100 mt-2 font-medium">Sign in to AssetFlow ERP</p>
+            <h2 className="text-3xl font-bold text-white tracking-tight">Create Account</h2>
+            <p className="text-blue-100 mt-2 font-medium">Join AssetFlow ERP</p>
           </div>
           
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-5" onSubmit={handleSubmit}>
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-red-500/90 text-white p-3 text-sm backdrop-blur-sm">
                 <AlertCircle size={18} />
@@ -58,6 +62,18 @@ const Login = () => {
             )}
             
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-blue-50 mb-1" htmlFor="name">Full Name</label>
+                <input
+                  id="name"
+                  type="text"
+                  required
+                  className="block w-full rounded-xl bg-white/10 border border-white/20 px-4 py-3 text-white placeholder-blue-200/50 focus:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                  placeholder="John Doe"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-blue-50 mb-1" htmlFor="email">Email Address</label>
                 <input
@@ -77,8 +93,9 @@ const Login = () => {
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     required
+                    minLength={6}
                     className="block w-full rounded-xl bg-white/10 border border-white/20 px-4 py-3 text-white placeholder-blue-200/50 focus:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all pr-12"
-                    placeholder="••••••••"
+                    placeholder="Min. 6 characters"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
@@ -93,38 +110,19 @@ const Login = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-white/20 bg-white/10 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-blue-50">
-                  Remember me
-                </label>
-              </div>
-              <div className="text-sm">
-                <a href="#" className="font-medium text-blue-200 hover:text-white transition-colors">
-                  Forgot password?
-                </a>
-              </div>
-            </div>
-
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full mt-6 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
             >
-              {isSubmitting ? 'Signing in...' : 'Sign in'}
+              {isSubmitting ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
 
-          <p className="mt-8 text-center text-sm text-blue-100">
-            Don't have an account?{' '}
-            <Link to="/signup" className="font-bold text-white hover:text-blue-200 transition-colors">
-              Sign up now
+          <p className="mt-6 text-center text-sm text-blue-100">
+            Already have an account?{' '}
+            <Link to="/login" className="font-bold text-white hover:text-blue-200 transition-colors">
+              Sign in
             </Link>
           </p>
         </div>
@@ -133,4 +131,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default Signup;

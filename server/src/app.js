@@ -22,6 +22,7 @@ const eventBus = require('./core/eventBus');
 const authRoutes = require('./modules/auth/auth.routes');
 const departmentsRoutes = require('./modules/departments/departments.routes');
 const categoriesRoutes = require('./modules/categories/categories.routes');
+const employeesRoutes = require('./modules/employees/employees.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -56,6 +57,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/departments', departmentsRoutes);
 app.use('/api/categories', categoriesRoutes);
+app.use('/api/employees', employeesRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
