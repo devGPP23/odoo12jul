@@ -14,9 +14,14 @@ router.use(authenticate);
 router.post(
   '/',
   validate([
-    body('assetId').isUUID().withMessage('Invalid asset ID format'),
-    body('fromHolderId').isUUID().withMessage('Invalid fromHolder ID format'),
-    body('toHolderId').isUUID().withMessage('Invalid toHolder ID format')
+    body('assetId').optional().isUUID().withMessage('Invalid asset ID format'),
+    body('asset_id').optional().isUUID().withMessage('Invalid asset_id format'),
+    body('fromHolderId').optional().isUUID().withMessage('Invalid fromHolder ID format'),
+    body('from_holder_id').optional().isUUID().withMessage('Invalid from_holder_id format'),
+    body('from_user').optional().isUUID().withMessage('Invalid from_user ID format'),
+    body('toHolderId').optional().isUUID().withMessage('Invalid toHolder ID format'),
+    body('to_holder_id').optional().isUUID().withMessage('Invalid to_holder_id format'),
+    body('to_user').optional().isUUID().withMessage('Invalid to_user ID format')
   ]),
   allocationsController.createTransferRequest
 );

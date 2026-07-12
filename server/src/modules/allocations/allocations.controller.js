@@ -42,13 +42,21 @@ class AllocationsController {
 
   // Create transfer request
   createTransferRequest = asyncHandler(async (req, res) => {
-    const { assetId, fromHolderId, toHolderId } = req.body;
+    const { 
+      assetId, asset_id, 
+      fromHolderId, from_holder_id, from_user, fromUserId,
+      toHolderId, to_holder_id, to_user, toUserId 
+    } = req.body;
     const requestedById = req.user.id; // From JWT
 
+    const targetAssetId = assetId || asset_id;
+    const targetFromHolderId = fromHolderId || from_holder_id || from_user || fromUserId;
+    const targetToHolderId = toHolderId || to_holder_id || to_user || toUserId;
+
     const transferRequest = await allocationsService.createTransferRequest({
-      assetId,
-      fromHolderId,
-      toHolderId,
+      assetId: targetAssetId,
+      fromHolderId: targetFromHolderId,
+      toHolderId: targetToHolderId,
       requestedById
     });
 
