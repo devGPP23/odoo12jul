@@ -52,12 +52,15 @@ const reportsRoutes = require('./modules/reports/reports.routes');
 require('./modules/notifications/notifications.events');
 require('./modules/bookings/bookings.events');
 
+// Removed duplicate
+
 // Cron jobs
 const {
   startOverdueScanner,
   startBookingStatusUpdater,
   startBookingReminder,
 } = require('./jobs/overdueScanner');
+// Cleaned up conflict markers
 const startBookingJob = require('./jobs/bookingStatusUpdater');
 
 const app = express();
@@ -103,6 +106,9 @@ app.use('/api/audit-cycles', auditsRoutes);
 app.use('/api/audit-items', auditItemsRoutes);
 app.use('/api/activity-logs', activityRoutes);
 app.use('/api/reports', reportsRoutes);
+
+// Phase 4 - Audits
+app.use('/api/audit-cycles', auditsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });

@@ -305,8 +305,8 @@ model AuditItem {
   auditCycle   AuditCycle   @relation(fields: [auditCycleId], references: [id])
   assetId      String       @map("asset_id")
   asset        Asset        @relation(fields: [assetId], references: [id])
-  auditorId    String       @map("auditor_id")
-  auditor      Employee     @relation(fields: [auditorId], references: [id])
+  auditorId    String?      @map("auditor_id")
+  auditor      Employee?    @relation(fields: [auditorId], references: [id])
   result       AuditResult?
   notes        String?
   createdAt    DateTime     @default(now()) @map("created_at")

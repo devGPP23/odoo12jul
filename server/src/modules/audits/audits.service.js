@@ -1,403 +1,511 @@
+/**
+ * Audits Service — Phase 4 (4A.1 – 4A.8)
+ *
+ * Implements the full audit cycle lifecycle:
+ *   - createAuditCycle()       : POST /api/audit-cycles
+ *   - assignAuditors()         : POST /api/audit-cycles/:id/assign-auditors
+ *   - getCycleWithItems()      : GET /api/audit-cycles/:id/items
+ *   - markItem()               : PUT /api/audit-items/:id
+ *   - closeAuditCycle()        : POST /api/audit-cycles/:id/close
+ *   - getDiscrepancyReport()   : GET /api/audit-cycles/:id/report
+ *   - listCycles()             : GET /api/audit-cycles
+ *   - getCycleById()           : GET /api/audit-cycles/:id
+ *
+ * Edge cases handled:
+ *   AU1: No overlapping OPEN/IN_PROGRESS cycles for same scope
+ *   AU2: Pending items on close → offer force-close, mark missing → LOST
+ *   AU3: New asset during audit (scope match) → auto-add to cycle
+ *   AU4: Cannot re-open closed cycle
+ *   AU5: Only assigned auditors can mark items
+ */
+
 const { prisma } = require('../../config/postgres');
 const AppError = require('../../utils/AppError');
 const eventBus = require('../../core/eventBus');
+const { transitionAssetStatus } = require('../../core/assetStateMachine');
 
 class AuditsService {
   /**
-   * 4A.1: Create audit cycle.
-   * Edge case AU1: check no overlapping open/in_progress cycle for same scope.
+   * Create an audit cycle with scope (department or location) and date range.
+   * AU1: Check no overlapping open/in_progress cycle for same scope.
    */
-  async createCycle(data) {
+  async createAuditCycle(data, actor) {
     const { scopeType, scopeValue, dateStart, dateEnd } = data;
 
-    // Validate dates
-    const start = new Date(dateStart);
-    const end = new Date(dateEnd);
-    if (end <= start) {
-      throw new AppError('dateEnd must be after dateStart.', 400);
+    if (!['DEPARTMENT', 'LOCATION'].includes(scopeType)) {
+      throw new AppError('scopeType must be DEPARTMENT or LOCATION', 400);
     }
 
-    // AU1: Check no overlapping OPEN or IN_PROGRESS cycle for the same scope
+    // AU1: Check for overlapping open/in_progress cycle for same scope
     const overlapping = await prisma.auditCycle.findFirst({
       where: {
         scopeType,
         scopeValue,
         status: { in: ['OPEN', 'IN_PROGRESS'] },
-        // Date ranges overlap if: existing.start < new.end AND existing.end > new.start
-        dateStart: { lt: end },
-        dateEnd: { gt: start }
-      }
+        dateStart: { lte: new Date(dateEnd) },
+        dateEnd: { gte: new Date(dateStart) },
+      },
     });
-
     if (overlapping) {
       throw new AppError(
-        `An overlapping ${overlapping.status.toLowerCase()} audit cycle already exists for this scope (${scopeType}:${scopeValue}) from ${overlapping.dateStart.toISOString().split('T')[0]} to ${overlapping.dateEnd.toISOString().split('T')[0]}.`,
+        `An open audit cycle already exists for this ${scopeType.toLowerCase()}.`,
         409
       );
-    }
-
-    // Validate scope value exists
-    if (scopeType === 'DEPARTMENT') {
-      const dept = await prisma.department.findFirst({
-        where: { name: { equals: scopeValue, mode: 'insensitive' } }
-      });
-      if (!dept) {
-        throw new AppError(`Department '${scopeValue}' not found.`, 404);
-      }
     }
 
     const cycle = await prisma.auditCycle.create({
       data: {
         scopeType,
         scopeValue,
-        dateStart: start,
-        dateEnd: end,
-        status: 'OPEN'
-      }
+        dateStart: new Date(dateStart),
+        dateEnd: new Date(dateEnd),
+        status: 'OPEN',
+      },
+      include: { assignments: { include: { auditor: { select: { id: true, name: true } } } } },
     });
 
-    eventBus.emit('entity.action', {
-      type: 'audit.cycle_created',
-      entityType: 'audit_cycle',
-      entityId: cycle.id,
-      data: { scopeType, scopeValue, dateStart: start, dateEnd: end },
-      timestamp: new Date().toISOString()
+    // Auto-populate audit items for all assets matching scope
+    await this._populateAuditItems(cycle.id, scopeType, scopeValue);
+
+    setImmediate(() => {
+      eventBus.emit('entity.action', {
+        type: 'audit.created',
+        actorId: actor.id,
+        actorName: actor.name,
+        entityType: 'audit',
+        entityId: cycle.id,
+        scopeType,
+        scopeValue,
+        data: { dateStart, dateEnd },
+        timestamp: new Date().toISOString(),
+      });
     });
 
     return cycle;
   }
 
   /**
-   * 4A.2: Assign auditors to a cycle.
-   * Validate users exist and are active. Assign one or more.
+   * Populate AuditItem rows for all assets matching the cycle scope.
+   * If scopeType=DEPARTMENT → assets where employeeHolder.departmentId = scopeValue
+   * If scopeType=LOCATION   → assets where location = scopeValue
    */
-  async assignAuditors(cycleId, auditorIds) {
-    const cycle = await prisma.auditCycle.findUnique({ where: { id: cycleId } });
-    if (!cycle) {
-      throw new AppError('Audit cycle not found.', 404);
-    }
-    if (cycle.status === 'CLOSED') {
-      throw new AppError('Cannot assign auditors to a closed cycle.', 400);
+  async _populateAuditItems(cycleId, scopeType, scopeValue) {
+    let assetWhere = {};
+
+    if (scopeType === 'DEPARTMENT') {
+      // Assets currently allocated to employees in this department
+      assetWhere = {
+        allocations: {
+          some: {
+            status: 'ACTIVE',
+            employeeHolder: { departmentId: scopeValue },
+          },
+        },
+      };
+    } else if (scopeType === 'LOCATION') {
+      assetWhere = { location: scopeValue };
     }
 
-    if (!auditorIds || auditorIds.length === 0) {
-      throw new AppError('At least one auditorId must be provided.', 400);
-    }
-
-    // Validate all auditors exist and are active
-    const employees = await prisma.employee.findMany({
-      where: { id: { in: auditorIds } }
+    const assets = await prisma.asset.findMany({
+      where: assetWhere,
+      select: { id: true },
     });
 
-    if (employees.length !== auditorIds.length) {
-      const foundIds = employees.map(e => e.id);
-      const missing = auditorIds.filter(id => !foundIds.includes(id));
-      throw new AppError(`Employees not found: ${missing.join(', ')}`, 404);
+    if (assets.length > 0) {
+      await prisma.auditItem.createMany({
+        data: assets.map((a) => ({
+          auditCycleId: cycleId,
+          assetId: a.id,
+        })),
+        skipDuplicates: true,
+      });
     }
-
-    const inactive = employees.filter(e => e.status !== 'ACTIVE');
-    if (inactive.length > 0) {
-      throw new AppError(
-        `Employees not active: ${inactive.map(e => e.name).join(', ')}`,
-        400
-      );
-    }
-
-    // Create assignments (skip duplicates using skipDuplicates)
-    const assignments = await prisma.auditAssignment.createMany({
-      data: auditorIds.map(auditorId => ({
-        auditCycleId: cycleId,
-        auditorId
-      })),
-      skipDuplicates: true
-    });
-
-    // Fetch all current assignments for the response
-    const allAssignments = await prisma.auditAssignment.findMany({
-      where: { auditCycleId: cycleId },
-      include: {
-        auditor: { select: { id: true, name: true, email: true, role: true } }
-      }
-    });
-
-    eventBus.emit('entity.action', {
-      type: 'audit.auditors_assigned',
-      entityType: 'audit_cycle',
-      entityId: cycleId,
-      data: { auditorIds, newlyAssigned: assignments.count },
-      timestamp: new Date().toISOString()
-    });
-
-    return {
-      cycleId,
-      totalAssigned: allAssignments.length,
-      newlyAssigned: assignments.count,
-      auditors: allAssignments.map(a => a.auditor)
-    };
   }
 
   /**
-   * 4A.3: Auto-populate audit items.
-   * Query all assets matching scope → create AuditItem rows.
-   * DEPARTMENT → all assets whose active allocation holder belongs to that department.
-   * LOCATION  → all assets at that location.
+   * Assign one or more auditors to an audit cycle.
+   * Validates users exist and are active.
+   * Distributes unassigned items round-robin.
+   * Emits audit.assigned event for notifications.
    */
-  async populateItems(cycleId) {
-    const cycle = await prisma.auditCycle.findUnique({
-      where: { id: cycleId },
-      include: { assignments: true }
+  async assignAuditors(cycleId, auditorIds, actor) {
+    const cycle = await prisma.auditCycle.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new AppError('Audit cycle not found', 404);
+    if (cycle.status !== 'OPEN') {
+      throw new AppError('Can only assign auditors to OPEN cycles', 400);
+    }
+
+    // Validate all auditors exist and are ACTIVE
+    const auditors = await prisma.employee.findMany({
+      where: { id: { in: auditorIds }, status: 'ACTIVE' },
+      select: { id: true, name: true, email: true },
+    });
+    if (auditors.length !== auditorIds.length) {
+      throw new AppError('One or more auditors not found or inactive', 404);
+    }
+
+    // Create assignments (skip duplicates)
+    await prisma.auditAssignment.createMany({
+      data: auditorIds.map((auditorId) => ({ auditCycleId: cycleId, auditorId })),
+      skipDuplicates: true,
     });
 
-    if (!cycle) {
-      throw new AppError('Audit cycle not found.', 404);
-    }
-    if (cycle.status === 'CLOSED') {
-      throw new AppError('Cannot populate items for a closed cycle.', 400);
-    }
-    if (cycle.assignments.length === 0) {
-      throw new AppError('Assign at least one auditor before populating items.', 400);
-    }
+    // Now distribute unassigned AuditItems to auditors round-robin
+    const unassignedItems = await prisma.auditItem.findMany({
+      where: { auditCycleId: cycleId, auditorId: null },
+      select: { id: true },
+    });
 
-    let assets = [];
-
-    if (cycle.scopeType === 'DEPARTMENT') {
-      // Find department by name (case-insensitive)
-      const dept = await prisma.department.findFirst({
-        where: { name: { equals: cycle.scopeValue, mode: 'insensitive' } }
-      });
-
-      if (!dept) {
-        throw new AppError(`Department '${cycle.scopeValue}' not found.`, 404);
-      }
-
-      // Find all assets currently allocated to employees in this department
-      // OR assets allocated to the department itself
-      const allocations = await prisma.allocation.findMany({
-        where: {
-          status: 'ACTIVE',
-          OR: [
-            { employeeHolder: { departmentId: dept.id } },
-            { departmentHolderId: dept.id }
-          ]
-        },
-        select: { assetId: true }
-      });
-
-      const assetIds = [...new Set(allocations.map(a => a.assetId))];
-
-      if (assetIds.length > 0) {
-        assets = await prisma.asset.findMany({
-          where: { id: { in: assetIds } },
-          select: { id: true }
+    if (unassignedItems.length > 0 && auditorIds.length > 0) {
+      for (let i = 0; i < unassignedItems.length; i++) {
+        const assignedAuditorId = auditorIds[i % auditorIds.length];
+        await prisma.auditItem.update({
+          where: { id: unassignedItems[i].id },
+          data: { auditorId: assignedAuditorId },
         });
       }
-    } else if (cycle.scopeType === 'LOCATION') {
-      // All assets at that location
-      assets = await prisma.asset.findMany({
-        where: {
-          location: { equals: cycle.scopeValue, mode: 'insensitive' }
-        },
-        select: { id: true }
+    }
+
+    // Emit audit.assigned events for each auditor (for notifications)
+    setImmediate(() => {
+      auditorIds.forEach((auditorId) => {
+        eventBus.emit('entity.action', {
+          type: 'audit.assigned',
+          actorId: actor?.id || null,
+          actorName: actor?.name || 'System',
+          entityType: 'audit',
+          entityId: cycleId,
+          targetUserId: auditorId, // For notification targeting
+          scopeType: cycle.scopeType,
+          scopeValue: cycle.scopeValue,
+          data: { cycleId, auditorId },
+          timestamp: new Date().toISOString(),
+        });
       });
-    }
-
-    if (assets.length === 0) {
-      return { cycleId, itemsCreated: 0, message: 'No assets found matching the scope.' };
-    }
-
-    // Round-robin assignment of auditors across assets
-    const auditorIds = cycle.assignments.map(a => a.auditorId);
-
-    const itemsData = assets.map((asset, index) => ({
-      auditCycleId: cycleId,
-      assetId: asset.id,
-      auditorId: auditorIds[index % auditorIds.length]
-    }));
-
-    // Use createMany with skipDuplicates (unique constraint: auditCycleId + assetId)
-    const result = await prisma.auditItem.createMany({
-      data: itemsData,
-      skipDuplicates: true
     });
 
-    // Transition cycle to IN_PROGRESS
-    if (cycle.status === 'OPEN') {
-      await prisma.auditCycle.update({
-        where: { id: cycleId },
-        data: { status: 'IN_PROGRESS' }
-      });
-    }
-
-    eventBus.emit('entity.action', {
-      type: 'audit.items_populated',
-      entityType: 'audit_cycle',
-      entityId: cycleId,
-      data: { totalAssets: assets.length, itemsCreated: result.count },
-      timestamp: new Date().toISOString()
-    });
-
-    return {
-      cycleId,
-      itemsCreated: result.count,
-      totalAssetsInScope: assets.length
-    };
+    return { assigned: auditorIds.length, itemsDistributed: unassignedItems.length };
   }
 
   /**
-   * 4A.4: Get audit items for a cycle — paginated (50/page) with progress.
-   * Response: { items: [...], progress: { total, verified, missing, damaged, pending } }
+   * Get audit cycle with paginated items and progress summary.
    */
-  async getCycleItems(cycleId, { page = 1, limit = 50 } = {}) {
-    const cycle = await prisma.auditCycle.findUnique({ where: { id: cycleId } });
-    if (!cycle) {
-      throw new AppError('Audit cycle not found.', 404);
-    }
+  async getCycleWithItems(cycleId, pagination = { page: 1, limit: 50 }) {
+    const cycle = await prisma.auditCycle.findUnique({
+      where: { id: cycleId },
+      include: {
+        assignments: { include: { auditor: { select: { id: true, name: true } } } },
+      },
+    });
+    if (!cycle) throw new AppError('Audit cycle not found', 404);
 
+    const page = parseInt(pagination.page, 10) || 1;
+    const limit = parseInt(pagination.limit, 10) || 50;
     const skip = (page - 1) * limit;
 
-    const [items, totalItems] = await Promise.all([
+    const [items, total] = await Promise.all([
       prisma.auditItem.findMany({
         where: { auditCycleId: cycleId },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'asc' },
         include: {
           asset: {
             select: {
-              id: true, assetTag: true, name: true,
-              status: true, condition: true, location: true
-            }
+              id: true,
+              assetTag: true,
+              name: true,
+              status: true,
+              location: true,
+              category: { select: { id: true, name: true } },
+            },
           },
-          auditor: { select: { id: true, name: true } }
+          auditor: { select: { id: true, name: true } },
         },
-        orderBy: { createdAt: 'asc' },
-        skip,
-        take: parseInt(limit)
       }),
-      prisma.auditItem.count({ where: { auditCycleId: cycleId } })
+      prisma.auditItem.count({ where: { auditCycleId: cycleId } }),
     ]);
 
-    // Calculate progress counters
-    const allItems = await prisma.auditItem.groupBy({
+    // Progress summary
+    const progress = await prisma.auditItem.groupBy({
       by: ['result'],
       where: { auditCycleId: cycleId },
-      _count: { id: true }
+      _count: { result: true },
     });
 
-    const progress = {
-      total: totalItems,
-      verified: 0,
-      missing: 0,
-      damaged: 0,
-      pending: 0
-    };
-
-    allItems.forEach(group => {
-      if (group.result === 'VERIFIED') progress.verified = group._count.id;
-      else if (group.result === 'MISSING') progress.missing = group._count.id;
-      else if (group.result === 'DAMAGED') progress.damaged = group._count.id;
-      else if (group.result === null) progress.pending = group._count.id;
+    const progressMap = { total, verified: 0, missing: 0, damaged: 0, pending: 0 };
+    progress.forEach((p) => {
+      const key = p.result?.toLowerCase() || 'pending';
+      progressMap[key] = p._count.result;
     });
+    progressMap.pending = total - (progressMap.verified + progressMap.missing + progressMap.damaged);
 
     return {
       items,
-      progress,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: totalItems,
-        totalPages: Math.ceil(totalItems / limit)
-      }
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      progress: progressMap,
     };
   }
 
   /**
-   * Get all audit cycles with pagination/filters.
+   * Mark an audit item result.
+   * AU5: Only assigned auditor (or ADMIN/ASSET_MANAGER) can mark.
    */
-  async getAllCycles({ status, scopeType, page = 1, limit = 20 } = {}) {
-    const where = {};
-    if (status) where.status = status;
-    if (scopeType) where.scopeType = scopeType;
+  async markItem(itemId, actor, data) {
+    const { result, notes } = data;
 
-    const skip = (page - 1) * limit;
+    if (!['VERIFIED', 'MISSING', 'DAMAGED'].includes(result)) {
+      throw new AppError('result must be VERIFIED, MISSING, or DAMAGED', 400);
+    }
 
-    const [cycles, total] = await Promise.all([
-      prisma.auditCycle.findMany({
-        where,
-        include: {
-          _count: { select: { assignments: true, items: true } }
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: parseInt(limit)
-      }),
-      prisma.auditCycle.count({ where })
-    ]);
-
-    return {
-      data: cycles,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
-    };
-  }
-  /**
-   * 4A.5: Mark audit item result.
-   * Only the assigned auditor can mark (RBAC). Result: VERIFIED / MISSING / DAMAGED + notes.
-   */
-  async markResult(itemId, userId, { result, notes }) {
     const item = await prisma.auditItem.findUnique({
       where: { id: itemId },
       include: {
-        auditCycle: { select: { id: true, status: true } }
-      }
+        asset: { select: { id: true, assetTag: true, name: true } },
+        auditor: { select: { id: true, name: true } },
+        auditCycle: { select: { id: true, scopeType: true, scopeValue: true } },
+      },
     });
+    if (!item) throw new AppError('Audit item not found', 404);
 
-    if (!item) {
-      throw new AppError('Audit item not found.', 404);
-    }
-
-    if (item.auditCycle.status === 'CLOSED') {
-      throw new AppError('Cannot mark items on a closed audit cycle.', 400);
-    }
-
-    // RBAC: check caller is the assigned auditor (or an ADMIN / ASSET_MANAGER)
-    const caller = await prisma.employee.findUnique({ where: { id: userId } });
-    if (!caller) {
-      throw new AppError('User not found.', 404);
-    }
-
-    const isAssignedAuditor = item.auditorId === userId;
-    const isPrivileged = ['ADMIN', 'ASSET_MANAGER'].includes(caller.role);
-
-    if (!isAssignedAuditor && !isPrivileged) {
-      throw new AppError('Only the assigned auditor can mark this item.', 403);
+    // AU5: Authorization - only assigned auditor or admin/manager
+    const isAssignedAuditor = item.auditorId === actor.id;
+    const isManager = ['ADMIN', 'ASSET_MANAGER'].includes(actor.role);
+    if (!isAssignedAuditor && !isManager) {
+      throw new AppError('Only the assigned auditor can mark this item', 403);
     }
 
     const updated = await prisma.auditItem.update({
       where: { id: itemId },
-      data: {
-        result,
-        notes: notes || null
+      data: { result, notes: notes || null },
+      include: {
+        asset: { select: { id: true, assetTag: true, name: true, status: true } },
+        auditor: { select: { id: true, name: true } },
+      },
+    });
+
+    // Emit event for discrepancy notifications
+    if (result === 'MISSING' || result === 'DAMAGED') {
+      setImmediate(() => {
+        eventBus.emit('entity.action', {
+          type: 'audit.discrepancy',
+          actorId: actor.id,
+          actorName: actor.name,
+          entityType: 'audit_item',
+          entityId: itemId,
+          relatedAssetId: item.asset.id,
+          departmentId: item.auditCycle.scopeType === 'DEPARTMENT' ? item.auditCycle.scopeValue : null,
+          data: {
+            assetTag: item.asset.assetTag,
+            assetName: item.asset.name,
+            result,
+            notes,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Atomically close an audit cycle.
+   * - Lock cycle
+   * - Check pending items (offer force-close)
+   * - For each MISSING item → transitionAssetStatus → 'lost'
+   * - Generate discrepancy report
+   * - Set status = 'CLOSED'
+   * - Emit audit.closed event (Dev B batches notifications)
+   */
+  async closeAuditCycle(cycleId, forceClose = false, actor = null) {
+    return prisma.$transaction(async (tx) => {
+      // Lock the cycle row
+      const cycle = await tx.auditCycle.findUnique({
+        where: { id: cycleId },
+        include: { items: { include: { asset: { select: { id: true, assetTag: true } } } } },
+      });
+      if (!cycle) throw new AppError('Audit cycle not found', 404);
+
+      // AU4: Cannot re-open closed cycle
+      if (cycle.status === 'CLOSED') {
+        throw new AppError('Audit cycle is already closed and cannot be re-opened', 400);
+      }
+
+      // Count pending (null result) items
+      const pendingCount = cycle.items.filter((i) => !i.result).length;
+      if (pendingCount > 0 && !forceClose) {
+        throw new AppError(
+          `Cannot close: ${pendingCount} item(s) still pending. Use forceClose: true to mark missing as LOST.`,
+          409,
+          { pendingCount, forceCloseRequired: true }
+        );
+      }
+
+      // Force-close: mark all pending as MISSING
+      if (forceClose && pendingCount > 0) {
+        const pendingIds = cycle.items.filter((i) => !i.result).map((i) => i.id);
+        await tx.auditItem.updateMany({
+          where: { id: { in: pendingIds } },
+          data: { result: 'MISSING' },
+        });
+        // Update local items array for downstream logic
+        cycle.items.forEach((i) => {
+          if (!i.result) i.result = 'MISSING';
+        });
+      }
+
+      // For each MISSING item, transition asset to LOST
+      const missingItems = cycle.items.filter((i) => i.result === 'MISSING');
+      for (const item of missingItems) {
+        // Use state machine to transition to LOST
+        await transitionAssetStatus(item.assetId, 'LOST', `audit_missing_cycle_${cycleId}`, tx);
+      }
+
+      // Close the cycle
+      const closedCycle = await tx.auditCycle.update({
+        where: { id: cycleId },
+        data: { status: 'CLOSED' },
+        include: {
+          items: {
+            where: { result: { in: ['MISSING', 'DAMAGED'] } },
+            include: {
+              asset: { select: { id: true, assetTag: true, name: true, status: true } },
+              auditor: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+
+      // Emit audit.closed event (Dev B's handler will batch notifications)
+      setImmediate(() => {
+        eventBus.emit('entity.action', {
+          type: 'audit.closed',
+          actorId: actor?.id || null,
+          actorName: actor?.name || 'System',
+          entityType: 'audit',
+          entityId: cycleId,
+          data: {
+            scopeType: cycle.scopeType,
+            scopeValue: cycle.scopeValue,
+            discrepancyCount: closedCycle.items.length,
+            forceClose,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      return {
+        cycle: closedCycle,
+        discrepancies: closedCycle.items.map((i) => ({
+          assetId: i.asset.id,
+          assetTag: i.asset.assetTag,
+          assetName: i.asset.name,
+          result: i.result,
+          notes: i.notes,
+          flaggedBy: i.auditor?.name || 'System',
+        })),
+      };
+    });
+  }
+
+  /**
+   * Get discrepancy report: all items with result = 'MISSING' or 'DAMAGED'.
+   */
+  async getDiscrepancyReport(cycleId) {
+    const cycle = await prisma.auditCycle.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new AppError('Audit cycle not found', 404);
+
+    const discrepancies = await prisma.auditItem.findMany({
+      where: {
+        auditCycleId: cycleId,
+        result: { in: ['MISSING', 'DAMAGED'] },
       },
       include: {
         asset: {
-          select: { id: true, assetTag: true, name: true, status: true, condition: true }
+          select: {
+            id: true,
+            assetTag: true,
+            name: true,
+            status: true,
+            condition: true,
+            location: true,
+            category: { select: { id: true, name: true } },
+          },
         },
-        auditor: { select: { id: true, name: true } }
-      }
+        auditor: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: 'asc' },
     });
 
-    eventBus.emit('entity.action', {
-      type: 'audit.item_marked',
-      entityType: 'audit_item',
-      entityId: updated.id,
-      relatedAssetId: updated.assetId,
-      data: { result, notes, markedBy: userId },
-      timestamp: new Date().toISOString()
-    });
+    return {
+      cycleId,
+      scopeType: cycle.scopeType,
+      scopeValue: cycle.scopeValue,
+      totalDiscrepancies: discrepancies.length,
+      missing: discrepancies.filter((d) => d.result === 'MISSING').length,
+      damaged: discrepancies.filter((d) => d.result === 'DAMAGED').length,
+      items: discrepancies.map((d) => ({
+        assetId: d.asset.id,
+        assetTag: d.asset.assetTag,
+        assetName: d.asset.name,
+        assetStatus: d.asset.status,
+        assetCondition: d.asset.condition,
+        location: d.asset.location,
+        category: d.asset.category?.name,
+        result: d.result,
+        notes: d.notes,
+        flaggedBy: d.auditor?.name || 'Unknown',
+        flaggedAt: d.updatedAt,
+      })),
+    };
+  }
 
-    return updated;
+  /**
+   * List audit cycles with pagination and optional status filter.
+   */
+  async listCycles(filters = {}) {
+    const page = parseInt(filters.page, 10) || 1;
+    const limit = parseInt(filters.limit, 10) || 20;
+    const status = filters.status;
+    const skip = (page - 1) * limit;
+
+    const where = {};
+    if (status) where.status = status;
+
+    const [cycles, total] = await Promise.all([
+      prisma.auditCycle.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          assignments: { include: { auditor: { select: { id: true, name: true } } } },
+          _count: { select: { items: true } },
+        },
+      }),
+      prisma.auditCycle.count({ where }),
+    ]);
+
+    return {
+      data: cycles,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * Get audit cycle by ID.
+   */
+  async getCycleById(cycleId) {
+    const cycle = await prisma.auditCycle.findUnique({
+      where: { id: cycleId },
+      include: {
+        assignments: { include: { auditor: { select: { id: true, name: true, email: true } } } },
+        _count: { select: { items: true } },
+      },
+    });
+    if (!cycle) throw new AppError('Audit cycle not found', 404);
+    return cycle;
   }
 }
 

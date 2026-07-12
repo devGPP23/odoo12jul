@@ -10,6 +10,7 @@ import OrgSetup from './pages/OrgSetup/OrgSetup'
 import Maintenance from './pages/Maintenance/Maintenance'
 import Allocations from './pages/Allocations/Allocations'
 import Bookings from './pages/Bookings/Bookings'
+import Audits from './pages/Audits/Audits'
 
 // Dev B Pages
 import AssetRegistration from './pages/Assets/AssetRegistration'
@@ -55,7 +56,7 @@ function App() {
               {/* Maintenance (Dev A - Nishant) */}
               <Route path="/maintenance" element={<Maintenance />} />
 
-              <Route path="/audits" element={<div>Audits Page</div>} />
+              <Route path="/audits" element={<Audits />} />
 
               {/* Notification & Logs */}
               <Route path="/notifications" element={<NotificationsPage />} />
