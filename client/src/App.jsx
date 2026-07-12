@@ -8,6 +8,7 @@ import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import OrgSetup from './pages/OrgSetup/OrgSetup'
 import Allocations from './pages/Allocations/Allocations'
+import Bookings from './pages/Bookings/Bookings'
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
               {/* Placeholder for other routes */}
               <Route path="/assets" element={<div>Assets Page (Dev B)</div>} />
               <Route path="/allocations" element={<Allocations />} />
+              <Route path="/bookings" element={<Bookings />} />
               <Route path="/maintenance" element={<div>Maintenance Page</div>} />
               <Route path="/audits" element={<div>Audits Page</div>} />
             </Route>

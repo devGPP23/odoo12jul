@@ -28,6 +28,9 @@ const employeesRoutes = require('./modules/employees/employees.routes');
 const allocationsRoutes = require('./modules/allocations/allocations.routes');
 const transfersRoutes   = require('./modules/transfers/transfers.routes');
 
+// Phase 2B routes
+const bookingsRoutes    = require('./modules/bookings/bookings.routes');
+
 // Cron jobs
 const {
   startOverdueScanner,
@@ -73,6 +76,7 @@ app.use('/api/employees', employeesRoutes);
 // Phase 2A
 app.use('/api/allocations', allocationsRoutes);
 app.use('/api/transfers',   transfersRoutes);
+app.use('/api/bookings',    bookingsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
