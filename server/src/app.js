@@ -9,7 +9,10 @@ const http = require('http');
 const config = require('./config');
 const { connectPostgres, disconnectPostgres } = require('./config/postgres');
 const { connectMongo, disconnectMongo } = require('./config/mongo');
-const { connectRedis, disconnectRedis } = require('./config/redis');
+const { connectRedis, disconnectRedis, getRedisSub } = require('./config/redis');
+
+// Socket.io for Real-time
+const { Server } = require('socket.io');
 
 const { apiLimiter } = require('./middleware/rateLimiter');
 const sanitizer = require('./middleware/sanitizer');
@@ -40,6 +43,20 @@ const {
   startBookingStatusUpdater,
   startBookingReminder,
 } = require('./jobs/overdueScanner');
+
+// Dev B - Phase 1 & 2 Routes
+const assetsRoutes = require('./modules/assets/assets.routes');
+const bookingsRoutes = require('./modules/bookings/bookings.routes');
+
+// Dev B - Phase 3 Routes
+const notificationsRoutes = require('./modules/notifications/notifications.routes');
+const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
+
+// Dev B - Phase 3 Listeners
+require('./modules/notifications/notifications.events'); // Attach event listeners
+
+// Dev B - Cron Jobs
+const startBookingJob = require('./jobs/bookingStatusUpdater');
 
 const app = express();
 const server = http.createServer(app);
@@ -84,6 +101,12 @@ app.use('/api/allocations', allocationsRoutes);
 app.use('/api/transfers',   transfersRoutes);
 app.use('/api/bookings',    bookingsRoutes);
 
+// Dev B Routes
+app.use('/api/assets', assetsRoutes);
+app.use('/api/bookings', bookingsRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
 });
@@ -102,6 +125,38 @@ async function start() {
     ]);
 
     console.log('');
+
+    // Start Cron Jobs
+    startBookingJob();
+
+    // Socket.io Setup
+    const io = new Server(server, { 
+      cors: { origin: config.clientUrl, credentials: true } 
+    });
+
+    io.on('connection', (socket) => {
+      // Frontend se userId pass hoga connection query me
+      const userId = socket.handshake.query.userId || 'dummy-user-id';
+      socket.join(`user_${userId}`);
+      console.log(`🔌 Naya socket connect hua user ke liye: ${userId}`);
+      
+      socket.on('disconnect', () => {
+        console.log(`🔌 Socket disconnect ho gaya user: ${userId}`);
+      });
+    });
+
+    // Redis Pub/Sub Subscription for Real-time push
+    const sub = getRedisSub();
+    sub.psubscribe('notifications:*');
+    
+    sub.on('pmessage', (pattern, channel, message) => {
+      // channel hoga jaise 'notifications:user123'
+      const targetUserId = channel.split(':')[1];
+      const notificationData = JSON.parse(message);
+      
+      // Srif usi user ko bhejo jiska notification hai
+      io.to(`user_${targetUserId}`).emit('naya_notification', notificationData);
+    });
 
     server.listen(config.port, () => {
       console.log(`\n✅ API running on http://localhost:${config.port}`);

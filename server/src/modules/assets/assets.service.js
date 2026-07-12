@@ -1,5 +1,6 @@
 const { prisma } = require('../../config/postgres');
 const AppError = require('../../utils/AppError');
+const eventBus = require('../../core/eventBus'); // Naya event bhejne ke liye laaye hain
 
 
 // YAHA APAN SARE CRUD OPERATION KAR RHE  ASSETS PE 
@@ -30,6 +31,17 @@ exports.registerAsset = async (assetData) => {
       department: true
     }
   });
+
+  // Naya event bhej diya notification aur activity log ke liye
+  const nayaAssetData = {
+    type: 'asset.registered',
+    actorName: 'SystemAdmin', // aage chalke real user aayega
+    entityType: 'asset',
+    entityId: newAsset.id,
+    data: newAsset,
+    timestamp: new Date().toISOString()
+  };
+  eventBus.emit('entity.action', nayaAssetData);
 
   return newAsset;
 };
@@ -119,6 +131,17 @@ exports.updateAsset = async (assetId, updateData) => {
     }
   });
 
+  // Jab bhi asset update ho, ye event fire karenge
+  const updateKaData = {
+    type: 'asset.updated',
+    actorName: 'SystemAdmin', 
+    entityType: 'asset',
+    entityId: updatedAsset.id,
+    data: updatedAsset,
+    timestamp: new Date().toISOString()
+  };
+  eventBus.emit('entity.action', updateKaData);
+
   return updatedAsset;
 };
 
@@ -130,6 +153,18 @@ exports.deleteAsset = async (assetId) => {
   if (!asset) throw new AppError('Asset not found', 404);
 
   await prisma.asset.delete({ where: { id: assetId } });
+
+  // Delete hone pe bhi event nikal denge
+  const deleteKaData = {
+    type: 'asset.deleted',
+    actorName: 'SystemAdmin', 
+    entityType: 'asset',
+    entityId: assetId,
+    data: { deletedAssetTag: asset.assetTag },
+    timestamp: new Date().toISOString()
+  };
+  eventBus.emit('entity.action', deleteKaData);
+
   return { message: 'Asset deleted successfully' };
 };
 

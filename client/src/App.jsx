@@ -11,6 +11,13 @@ import Maintenance from './pages/Maintenance/Maintenance'
 import Allocations from './pages/Allocations/Allocations'
 import Bookings from './pages/Bookings/Bookings'
 
+// Dev B Pages
+import AssetRegistration from './pages/Assets/AssetRegistration'
+import AssetDirectory from './pages/Assets/AssetDirectory'
+import AssetDetail from './pages/Assets/AssetDetail'
+import BookingPage from './pages/Bookings/BookingPage'
+import DashboardPage from './pages/Dashboard/DashboardPage'
+
 function App() {
   return (
     <BrowserRouter>
@@ -20,22 +27,31 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
 
-          {/* Protected Routes (Needs Layout and Sidebar) */}
+          {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
               
-              {/* Only ADMIN can access Org Setup */}
+              {/* Admin Only */}
               <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
                 <Route path="/org-setup" element={<OrgSetup />} />
               </Route>
               
-              {/* All feature routes */}
-              <Route path="/assets" element={<div>Assets Page (Dev B)</div>} />
+              {/* Asset Routes (Dev B) */}
+              <Route path="/assets" element={<AssetDirectory />} />
+              <Route path="/assets/register" element={<AssetRegistration />} />
+              <Route path="/assets/:id" element={<AssetDetail />} />
+
+              {/* Allocation & Transfer (Dev A - Nishant/Om) */}
               <Route path="/allocations" element={<Allocations />} />
-              <Route path="/bookings" element={<Bookings />} />
+
+              {/* Bookings (Dev B - GP) */}
+              <Route path="/bookings" element={<BookingPage />} />
+
+              {/* Maintenance (Dev A - Nishant) */}
               <Route path="/maintenance" element={<Maintenance />} />
+
               <Route path="/audits" element={<div>Audits Page</div>} />
             </Route>
           </Route>
