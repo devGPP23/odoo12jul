@@ -23,6 +23,9 @@ const authRoutes = require('./modules/auth/auth.routes');
 const departmentsRoutes = require('./modules/departments/departments.routes');
 const categoriesRoutes = require('./modules/categories/categories.routes');
 const employeesRoutes = require('./modules/employees/employees.routes');
+const allocationsRoutes = require('./modules/allocations/allocations.routes');
+const transfersRoutes = require('./modules/allocations/transfers.routes');
+const maintenanceRoutes = require('./modules/maintenance/maintenance.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -37,7 +40,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // api rate limiting and noSQL/XSS injection rokne ke liye
 app.use('/api/', apiLimiter);
-app.use(sanitizer()); // NoSQL sanitizer
+app.use(sanitizer); // NoSQL sanitizer
 const xssSanitizer = require('./middleware/sanitize'); // XSS sanitizer
 app.use(xssSanitizer);
 
@@ -58,6 +61,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/departments', departmentsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/employees', employeesRoutes);
+app.use('/api/allocations', allocationsRoutes);
+app.use('/api/transfers', transfersRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
