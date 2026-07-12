@@ -31,8 +31,18 @@ router.post(
     param('id').isUUID().withMessage('Invalid allocation ID format'),
     body('condition')
       .optional()
-      .isIn(['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'])
+      .custom((value) => {
+        const val = value.toUpperCase();
+        return ['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'].includes(val);
+      })
       .withMessage('Invalid asset condition'),
+    body('return_condition')
+      .optional()
+      .custom((value) => {
+        const val = value.toUpperCase();
+        return ['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'].includes(val);
+      })
+      .withMessage('Invalid asset return_condition'),
     body('notes').optional().isString().withMessage('Notes must be a string')
   ]),
   allocationsController.returnAllocation

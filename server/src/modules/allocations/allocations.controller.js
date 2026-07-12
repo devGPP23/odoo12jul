@@ -23,9 +23,14 @@ class AllocationsController {
   // Return asset
   returnAllocation = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { condition, notes } = req.body;
+    const { condition, return_condition, notes } = req.body;
 
-    const result = await allocationsService.returnAllocation(id, { condition, notes });
+    const targetCondition = return_condition || condition;
+
+    const result = await allocationsService.returnAllocation(id, {
+      condition: targetCondition ? targetCondition.toUpperCase() : undefined,
+      notes
+    });
 
     res.status(200).json({
       success: true,
