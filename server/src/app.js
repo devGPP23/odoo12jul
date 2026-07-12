@@ -28,6 +28,7 @@ const transfersRoutes = require('./modules/allocations/transfers.routes');
 const maintenanceRoutes = require('./modules/maintenance/maintenance.routes');
 const auditsRoutes = require('./modules/audits/audits.routes');
 const auditItemsRoutes = require('./modules/audits/audit-items.routes');
+const aiRoutes = require('./modules/ai/ai.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -68,6 +69,7 @@ app.use('/api/transfers', transfersRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/audit-cycles', auditsRoutes);
 app.use('/api/audit-items', auditItemsRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
