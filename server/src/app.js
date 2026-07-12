@@ -27,15 +27,14 @@ const departmentsRoutes = require('./modules/departments/departments.routes');
 const categoriesRoutes = require('./modules/categories/categories.routes');
 const employeesRoutes = require('./modules/employees/employees.routes');
 const allocationsRoutes = require('./modules/allocations/allocations.routes');
-const transfersRoutes = require('./modules/allocations/transfers.routes');
+const transfersRoutes = require('./modules/transfers/transfers.routes');
 const maintenanceRoutes = require('./modules/maintenance/maintenance.routes');
-
-// Phase 2A routes
-const allocationsRoutes = require('./modules/allocations/allocations.routes');
-const transfersRoutes   = require('./modules/transfers/transfers.routes');
 
 // Phase 2B routes
 const bookingsRoutes    = require('./modules/bookings/bookings.routes');
+
+// Phase 4 routes
+const auditsRoutes      = require('./modules/audits/audits.routes');
 
 // Cron jobs
 const {
@@ -46,7 +45,6 @@ const {
 
 // Dev B - Phase 1 & 2 Routes
 const assetsRoutes = require('./modules/assets/assets.routes');
-const bookingsRoutes = require('./modules/bookings/bookings.routes');
 
 // Dev B - Phase 3 Routes
 const notificationsRoutes = require('./modules/notifications/notifications.routes');
@@ -95,17 +93,15 @@ app.use('/api/employees', employeesRoutes);
 app.use('/api/allocations', allocationsRoutes);
 app.use('/api/transfers', transfersRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
-
-// Phase 2A
-app.use('/api/allocations', allocationsRoutes);
-app.use('/api/transfers',   transfersRoutes);
 app.use('/api/bookings',    bookingsRoutes);
 
 // Dev B Routes
 app.use('/api/assets', assetsRoutes);
-app.use('/api/bookings', bookingsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+
+// Phase 4 - Audits
+app.use('/api/audit-cycles', auditsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
