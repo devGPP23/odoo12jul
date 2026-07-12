@@ -19,7 +19,7 @@ router.put(
       .withMessage('result must be VERIFIED, MISSING, or DAMAGED'),
     body('notes').optional({ nullable: true }).isString().withMessage('notes must be a string')
   ]),
-  auditsController.markResult
+  auditsController.markItem
 );
 
 module.exports = router;

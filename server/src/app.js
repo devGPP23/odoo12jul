@@ -33,7 +33,6 @@ const assetsRoutes = require('./modules/assets/assets.routes');
 
 // ─── Phase 2A routes (Dev A - nishant/om) ───
 const allocationsRoutes = require('./modules/allocations/allocations.routes');
-const allocationTransfersRoutes = require('./modules/allocations/transfers.routes');
 const transfersRoutes = require('./modules/transfers/transfers.routes');
 const maintenanceRoutes = require('./modules/maintenance/maintenance.routes');
 const auditsRoutes = require('./modules/audits/audits.routes');
@@ -96,7 +95,6 @@ app.use('/api/categories', categoriesRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/assets', assetsRoutes);
 app.use('/api/allocations', allocationsRoutes);
-app.use('/api/allocations', allocationTransfersRoutes); // Nishant's transfer routes nested under allocations
 app.use('/api/transfers', transfersRoutes);              // GP's standalone transfers module
 app.use('/api/bookings', bookingsRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
@@ -106,9 +104,6 @@ app.use('/api/audit-cycles', auditsRoutes);
 app.use('/api/audit-items', auditItemsRoutes);
 app.use('/api/activity-logs', activityRoutes);
 app.use('/api/reports', reportsRoutes);
-
-// Phase 4 - Audits
-app.use('/api/audit-cycles', auditsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
