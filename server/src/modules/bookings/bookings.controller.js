@@ -4,11 +4,22 @@ const asyncHandler = require('../../utils/asyncHandler');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// HELPER: To bypass Auth for Dev B testing, we fetch Priya's actual DB UUID
+// HELPER: To bypass Auth for Dev B testing, we fetch a valid DB UUID
 const getUserId = async (req) => {
   if (req.user?.id) return req.user.id;
-  const priya = await prisma.employee.findFirst({ where: { email: 'priya@assetflow.com' } });
-  return priya ? priya.id : 'dummy-user-id';
+  const anyEmployee = await prisma.employee.findFirst();
+  if (anyEmployee) return anyEmployee.id;
+  
+  // Fallback to a real admin created inline just in case
+  const fallbackAdmin = await prisma.employee.create({
+    data: {
+      name: 'System Fallback',
+      email: `fallback-${Date.now()}@test.com`,
+      passwordHash: 'dummy',
+      role: 'ADMIN'
+    }
+  });
+  return fallbackAdmin.id;
 };
 
 // GET /api/bookings/test/me -> Exposes Priya's ID to frontend so Cancel button works
