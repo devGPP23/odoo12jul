@@ -49,6 +49,7 @@ enum AllocationStatus {
   ACTIVE
   RETURNED
   TRANSFERRED
+  OVERDUE
 }
 
 enum TransferStatus {
@@ -87,6 +88,7 @@ enum AuditScopeType {
 
 enum AuditCycleStatus {
   OPEN
+  IN_PROGRESS
   CLOSED
 }
 
@@ -261,6 +263,7 @@ model MaintenanceRequest {
   approvedBy       Employee?           @relation("MaintenanceApprover", fields: [approvedById], references: [id])
   technicianId     String?             @map("technician_id")
   technician       Employee?           @relation("MaintenanceTechnician", fields: [technicianId], references: [id])
+  previousAssetStatus AssetStatus?        @map("previous_asset_status")
   resolvedAt       DateTime?           @map("resolved_at")
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
@@ -302,8 +305,8 @@ model AuditItem {
   auditCycle   AuditCycle   @relation(fields: [auditCycleId], references: [id])
   assetId      String       @map("asset_id")
   asset        Asset        @relation(fields: [assetId], references: [id])
-  auditorId    String       @map("auditor_id")
-  auditor      Employee     @relation(fields: [auditorId], references: [id])
+  auditorId    String?      @map("auditor_id")
+  auditor      Employee?    @relation(fields: [auditorId], references: [id])
   result       AuditResult?
   notes        String?
   createdAt    DateTime     @default(now()) @map("created_at")

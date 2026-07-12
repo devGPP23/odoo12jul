@@ -65,7 +65,13 @@ function errorHandler(err, req, res, _next) {
   res.status(statusCode).json({
     success: false,
     message,
+    error: {
+      code: statusCode === 409 ? 'CONFLICT' : 'ERROR',
+      message,
+      details
+    },
     ...(details && { details }),
+    ...((statusCode === 409 && details) ? details : {}),
     ...(config.isDev && statusCode >= 500 && { stack: err.stack }),
   });
 }

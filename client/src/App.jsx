@@ -1,61 +1,73 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
+import React from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import Layout from './components/Layout'
+import ProtectedRoute from './components/ProtectedRoute'
+import Login from './pages/Login'
+import Signup from './pages/Signup'
+import Dashboard from './pages/Dashboard'
+import OrgSetup from './pages/OrgSetup/OrgSetup'
+import Maintenance from './pages/Maintenance/Maintenance'
+import Allocations from './pages/Allocations/Allocations'
+import Bookings from './pages/Bookings/Bookings'
+import Audits from './pages/Audits/Audits'
 
 // Dev B Pages
-import AssetRegistration from './pages/Assets/AssetRegistration';
-import AssetDirectory from './pages/Assets/AssetDirectory';
-import AssetDetail from './pages/Assets/AssetDetail';
-import BookingPage from './pages/Bookings/BookingPage';
-import DashboardPage from './pages/Dashboard/DashboardPage';
-import NotificationsPage from './pages/Notifications/NotificationsPage';
-import ActivityLogPage from './pages/ActivityLog/ActivityLogPage';
-import ReportsPage from './pages/Reports/ReportsPage';
-import NotificationBell from './components/NotificationBell';
+import AssetRegistration from './pages/Assets/AssetRegistration'
+import AssetDirectory from './pages/Assets/AssetDirectory'
+import AssetDetail from './pages/Assets/AssetDetail'
+import BookingPage from './pages/Bookings/BookingPage'
+import DashboardPage from './pages/Dashboard/DashboardPage'
+import NotificationsPage from './pages/Notifications/NotificationsPage'
+import ActivityLogPage from './pages/ActivityLog/ActivityLogPage'
+import ReportsPage from './pages/Reports/ReportsPage'
 
 function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* Simple Demo Navbar */}
-        <nav className="bg-indigo-600 text-white p-4 shadow-md">
-          <div className="max-w-7xl mx-auto flex justify-between items-center">
-            <h1 className="text-xl font-bold">AssetFlow (Dev B Demo)</h1>
-            <div className="space-x-4 flex items-center">
-              <Link to="/dashboard" className="hover:text-indigo-200 mr-2">Dashboard</Link>
-              <Link to="/assets" className="hover:text-indigo-200">Asset Directory</Link>
-              <Link to="/assets/register" className="hover:text-indigo-200">Register Asset</Link>
-              <Link to="/bookings" className="hover:text-indigo-200">Bookings</Link>
-              <Link to="/reports" className="hover:text-indigo-200">Reports</Link>
-              <Link to="/activity-logs" className="hover:text-indigo-200">Activity Log</Link>
-              <NotificationBell />
-            </div>
-          </div>
-        </nav>
+      <AuthProvider>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
 
-        {/* Main Content Area */}
-        <main className="flex-grow p-4">
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            
-            <Route path="/dashboard" element={<DashboardPage />} />
-            
-            {/* Asset Routes */}
-            <Route path="/assets" element={<AssetDirectory />} />
-            <Route path="/assets/register" element={<AssetRegistration />} />
-            <Route path="/assets/:id" element={<AssetDetail />} />
-            
-            {/* Booking Routes */}
-            <Route path="/bookings" element={<BookingPage />} />
-            
-            {/* Notification & Logs */}
-            <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/activity-logs" element={<ActivityLogPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-          </Routes>
-        </main>
-      </div>
+          {/* Protected Routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              
+              {/* Admin Only */}
+              <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+                <Route path="/org-setup" element={<OrgSetup />} />
+              </Route>
+              
+              {/* Asset Routes (Dev B) */}
+              <Route path="/assets" element={<AssetDirectory />} />
+              <Route path="/assets/register" element={<AssetRegistration />} />
+              <Route path="/assets/:id" element={<AssetDetail />} />
+
+              {/* Allocation & Transfer (Dev A - Nishant/Om) */}
+              <Route path="/allocations" element={<Allocations />} />
+
+              {/* Bookings (Dev B - GP) */}
+              <Route path="/bookings" element={<BookingPage />} />
+
+              {/* Maintenance (Dev A - Nishant) */}
+              <Route path="/maintenance" element={<Maintenance />} />
+
+              <Route path="/audits" element={<Audits />} />
+
+              {/* Notification & Logs */}
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/activity-logs" element={<ActivityLogPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
+            </Route>
+          </Route>
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
-  );
+  )
 }
 
-export default App;
+export default App
