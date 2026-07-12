@@ -5,11 +5,9 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
-import Dashboard from './pages/Dashboard'
 import OrgSetup from './pages/OrgSetup/OrgSetup'
 import Maintenance from './pages/Maintenance/Maintenance'
 import Allocations from './pages/Allocations/Allocations'
-import Bookings from './pages/Bookings/Bookings'
 import Audits from './pages/Audits/Audits'
 
 // Dev B Pages
@@ -37,28 +35,27 @@ function App() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               
-              {/* Admin Only */}
-              <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-                <Route path="/org-setup" element={<OrgSetup />} />
-              </Route>
+              {/* Org Setup - Admin Only */}
+              <Route path="/org-setup" element={<OrgSetup />} />
               
-              {/* Asset Routes (Dev B) */}
+              {/* Asset Routes */}
               <Route path="/assets" element={<AssetDirectory />} />
               <Route path="/assets/register" element={<AssetRegistration />} />
               <Route path="/assets/:id" element={<AssetDetail />} />
 
-              {/* Allocation & Transfer (Dev A - Nishant/Om) */}
+              {/* Allocation & Transfer */}
               <Route path="/allocations" element={<Allocations />} />
 
-              {/* Bookings (Dev B - GP) */}
+              {/* Bookings */}
               <Route path="/bookings" element={<BookingPage />} />
 
-              {/* Maintenance (Dev A - Nishant) */}
+              {/* Maintenance */}
               <Route path="/maintenance" element={<Maintenance />} />
 
+              {/* Audits */}
               <Route path="/audits" element={<Audits />} />
 
-              {/* Notification & Logs */}
+              {/* Notifications & Logs */}
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/activity-logs" element={<ActivityLogPage />} />
               <Route path="/reports" element={<ReportsPage />} />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 
 // Simple Animated Counter Component (Beginner friendly)
@@ -147,12 +147,9 @@ const DashboardPage = () => {
             <Link to="/bookings" className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-full shadow transition-transform transform hover:scale-105">
               📅 Book Resource
             </Link>
-            <button 
-              className="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-6 rounded-full shadow transition-transform transform hover:scale-105"
-              onClick={() => alert('Maintenance module Dev A banayega! (Phase 4)')}
-            >
+            <Link to="/maintenance" className="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-6 rounded-full shadow transition-transform transform hover:scale-105">
               🔧 Raise Maintenance
-            </button>
+            </Link>
           </div>
         </>
       ) : (
@@ -165,12 +162,9 @@ const DashboardPage = () => {
             <Link to="/bookings" className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-full shadow transition-transform transform hover:scale-105">
               📅 Book Resource
             </Link>
-            <button 
-              className="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-6 rounded-full shadow transition-transform transform hover:scale-105"
-              onClick={() => alert('Maintenance module Dev A banayega! (Phase 4)')}
-            >
+            <Link to="/maintenance" className="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-6 rounded-full shadow transition-transform transform hover:scale-105">
               🔧 Raise Maintenance
-            </button>
+            </Link>
           </div>
           
           {/* KPI Cards */}

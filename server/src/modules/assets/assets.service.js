@@ -27,8 +27,7 @@ exports.registerAsset = async (assetData) => {
       status: 'AVAILABLE', // from AssetStatus enum
     },
     include: {
-      category: true,
-      department: true
+      category: true
     }
   });
 
@@ -101,8 +100,7 @@ exports.getAssetById = async (assetId) => {
   const asset = await prisma.asset.findUnique({
     where: { id: assetId },
     include: {
-      category: true,
-      department: true
+      category: true
     }
   });
 
@@ -124,8 +122,7 @@ exports.updateAsset = async (assetId, updateData) => {
     where: { id: assetId },
     data: updateData,
     include: {
-      category: true,
-      department: true
+      category: true
     }
   });
 
