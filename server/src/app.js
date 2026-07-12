@@ -36,6 +36,8 @@ const allocationsRoutes = require('./modules/allocations/allocations.routes');
 const allocationTransfersRoutes = require('./modules/allocations/transfers.routes');
 const transfersRoutes = require('./modules/transfers/transfers.routes');
 const maintenanceRoutes = require('./modules/maintenance/maintenance.routes');
+const auditsRoutes = require('./modules/audits/audits.routes');
+const auditItemsRoutes = require('./modules/audits/audit-items.routes');
 
 // ─── Phase 2B routes (Dev B - gp) ───
 const bookingsRoutes = require('./modules/bookings/bookings.routes');
@@ -93,6 +95,8 @@ app.use('/api/bookings', bookingsRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/audit-cycles', auditsRoutes);
+app.use('/api/audit-items', auditItemsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });

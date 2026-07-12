@@ -88,6 +88,7 @@ enum AuditScopeType {
 
 enum AuditCycleStatus {
   OPEN
+  IN_PROGRESS
   CLOSED
 }
 
