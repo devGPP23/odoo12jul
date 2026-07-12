@@ -7,6 +7,9 @@ import AssetDirectory from './pages/Assets/AssetDirectory';
 import AssetDetail from './pages/Assets/AssetDetail';
 import BookingPage from './pages/Bookings/BookingPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
+import NotificationsPage from './pages/Notifications/NotificationsPage';
+import ActivityLogPage from './pages/ActivityLog/ActivityLogPage';
+import ReportsPage from './pages/Reports/ReportsPage';
 import NotificationBell from './components/NotificationBell';
 
 function App() {
@@ -22,6 +25,8 @@ function App() {
               <Link to="/assets" className="hover:text-indigo-200">Asset Directory</Link>
               <Link to="/assets/register" className="hover:text-indigo-200">Register Asset</Link>
               <Link to="/bookings" className="hover:text-indigo-200">Bookings</Link>
+              <Link to="/reports" className="hover:text-indigo-200">Reports</Link>
+              <Link to="/activity-logs" className="hover:text-indigo-200">Activity Log</Link>
               <NotificationBell />
             </div>
           </div>
@@ -41,6 +46,11 @@ function App() {
             
             {/* Booking Routes */}
             <Route path="/bookings" element={<BookingPage />} />
+            
+            {/* Notification & Logs */}
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/activity-logs" element={<ActivityLogPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
           </Routes>
         </main>
       </div>

@@ -33,9 +33,12 @@ const bookingsRoutes = require('./modules/bookings/bookings.routes');
 // Dev B - Phase 3 Routes
 const notificationsRoutes = require('./modules/notifications/notifications.routes');
 const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
+const activityRoutes = require('./modules/activity/activity.routes');
+const reportsRoutes = require('./modules/reports/reports.routes');
 
 // Dev B - Phase 3 Listeners
 require('./modules/notifications/notifications.events'); // Attach event listeners
+require('./modules/bookings/bookings.events'); // Maintenance ke event catch karne ke liye
 
 // Dev B - Cron Jobs
 const startBookingJob = require('./jobs/bookingStatusUpdater');
@@ -53,7 +56,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // api rate limiting and noSQL/XSS injection rokne ke liye
 app.use('/api/', apiLimiter);
-app.use(sanitizer()); // NoSQL sanitizer
+app.use(sanitizer); // NoSQL sanitizer
 const xssSanitizer = require('./middleware/sanitize'); // XSS sanitizer
 app.use(xssSanitizer);
 
@@ -79,6 +82,8 @@ app.use('/api/assets', assetsRoutes);
 app.use('/api/bookings', bookingsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/activity-logs', activityRoutes);
+app.use('/api/reports', reportsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });

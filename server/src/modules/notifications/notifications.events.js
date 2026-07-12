@@ -24,6 +24,7 @@ const ACTION_TO_NOTIFICATION_TYPE = {
   'allocation.overdue': 'OVERDUE_RETURN',
   'audit.assigned': 'AUDIT_ASSIGNED',
   'audit.discrepancy': 'AUDIT_DISCREPANCY',
+  'audit.closed.batch': 'AUDIT_BATCH_CLOSED', // 3B.10 ke liye naya enum mapping
   'role.promoted': 'ROLE_PROMOTED',
 };
 // Sab Events ke liye main listener
@@ -64,6 +65,13 @@ eventBus.on('entity.action', async (eventPayload) => {
         break;
       case 'OVERDUE_RETURN':
         message = `Reminder: An asset you hold is overdue for return.`;
+        break;
+      // 3B.10: Bulk batching ka jugaad
+      case 'AUDIT_BATCH_CLOSED':
+        // Data me bataya hoga kitne asset affect hue
+        const assetsCount = data?.assetsAffected || 0;
+        const statusDetail = data?.statusDetail || 'marked Lost';
+        message = `Audit #${entityId} closed: ${assetsCount} assets ${statusDetail}.`;
         break;
       // fallback handled by default initialization
     }
