@@ -8,8 +8,8 @@
  * Enforces legal transitions based on the state table from the architecture doc.
  */
 
-const { prisma } = require('../../config/postgres');
-const AppError = require('../../utils/AppError');
+const { prisma } = require('../config/postgres');
+const AppError = require('../utils/AppError');
 
 /**
  * Legal state transitions.
