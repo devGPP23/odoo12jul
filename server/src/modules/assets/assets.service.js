@@ -62,26 +62,24 @@ exports.getAssets = async (filters, page = 1, limit = 20) => {
     ];
   }
 
-  if (tag) where.assetTag = { contains: tag, mode: 'insensitive' };
-  if (serial) where.serialNumber = { contains: serial, mode: 'insensitive' };
-  if (categoryId) where.categoryId = categoryId;
-  if (status) where.status = status;
-  if (departmentId) where.departmentId = departmentId;
-  if (location) where.location = { contains: location, mode: 'insensitive' };
-
-  const skip = (page - 1) * limit;
-
-  const [data, total] = await Promise.all([
-    prisma.asset.findMany({
-      where,
-      skip,
-      take: Number(limit),
-      orderBy: { createdAt: 'desc' },
-      include: {
-        category: true,
-        department: true
-      }
-    }),
+      if (tag) where.assetTag = { contains: tag, mode: 'insensitive' };
+      if (serial) where.serialNumber = { contains: serial, mode: 'insensitive' };
+      if (categoryId) where.categoryId = categoryId;
+      if (status) where.status = status;
+      if (location) where.location = { contains: location, mode: 'insensitive' };
+    
+      const skip = (page - 1) * limit;
+    
+      const [data, total] = await Promise.all([
+        prisma.asset.findMany({
+          where,
+          skip,
+          take: Number(limit),
+          orderBy: { createdAt: 'desc' },
+          include: {
+            category: true
+          }
+        }),
     prisma.asset.count({ where })
   ]);
 
