@@ -341,6 +341,64 @@ class AuditsService {
       }
     };
   }
+  /**
+   * 4A.5: Mark audit item result.
+   * Only the assigned auditor can mark (RBAC). Result: VERIFIED / MISSING / DAMAGED + notes.
+   */
+  async markResult(itemId, userId, { result, notes }) {
+    const item = await prisma.auditItem.findUnique({
+      where: { id: itemId },
+      include: {
+        auditCycle: { select: { id: true, status: true } }
+      }
+    });
+
+    if (!item) {
+      throw new AppError('Audit item not found.', 404);
+    }
+
+    if (item.auditCycle.status === 'CLOSED') {
+      throw new AppError('Cannot mark items on a closed audit cycle.', 400);
+    }
+
+    // RBAC: check caller is the assigned auditor (or an ADMIN / ASSET_MANAGER)
+    const caller = await prisma.employee.findUnique({ where: { id: userId } });
+    if (!caller) {
+      throw new AppError('User not found.', 404);
+    }
+
+    const isAssignedAuditor = item.auditorId === userId;
+    const isPrivileged = ['ADMIN', 'ASSET_MANAGER'].includes(caller.role);
+
+    if (!isAssignedAuditor && !isPrivileged) {
+      throw new AppError('Only the assigned auditor can mark this item.', 403);
+    }
+
+    const updated = await prisma.auditItem.update({
+      where: { id: itemId },
+      data: {
+        result,
+        notes: notes || null
+      },
+      include: {
+        asset: {
+          select: { id: true, assetTag: true, name: true, status: true, condition: true }
+        },
+        auditor: { select: { id: true, name: true } }
+      }
+    });
+
+    eventBus.emit('entity.action', {
+      type: 'audit.item_marked',
+      entityType: 'audit_item',
+      entityId: updated.id,
+      relatedAssetId: updated.assetId,
+      data: { result, notes, markedBy: userId },
+      timestamp: new Date().toISOString()
+    });
+
+    return updated;
+  }
 }
 
 module.exports = new AuditsService();

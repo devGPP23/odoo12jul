@@ -89,6 +89,22 @@ class AuditsController {
       pagination: result.pagination
     });
   });
+  /**
+   * 4A.5: PUT /api/audit-items/:id — mark result
+   */
+  markResult = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const { result, notes } = req.body;
+
+    const updated = await auditsService.markResult(id, userId, { result, notes });
+
+    res.status(200).json({
+      success: true,
+      message: 'Audit item marked successfully',
+      data: updated
+    });
+  });
 }
 
 module.exports = new AuditsController();
