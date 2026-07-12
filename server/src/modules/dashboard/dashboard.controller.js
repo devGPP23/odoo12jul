@@ -80,4 +80,34 @@ exports.overdueLao = asyncHandler(async (req, res) => {
   });
 });
 
+// GET /api/dashboard/trust-score
+// Gamification feature: Calculates a Trust Score based on overdue items
+exports.trustScoreLao = asyncHandler(async (req, res) => {
+  // Demo ke liye, hum overall system ka average overdue nikal rahe hain.
+  // Real app me ye current user(req.user.id) ke hisaab se hoga.
+  const activeAllocations = await prisma.allocation.count({
+    where: { status: 'ACTIVE' }
+  });
 
+  const abhiKaTime = new Date();
+  const overdueAllocations = await prisma.allocation.count({
+    where: {
+      status: 'ACTIVE',
+      expectedReturnDate: { lt: abhiKaTime }
+    }
+  });
+
+  // Basic Trust Algorithm: Start with 100, deduct 5 points for every overdue asset 
+  // (Scale it down if company is huge, but for demo this is fine)
+  let trustScore = 100 - (overdueAllocations * 5);
+  if (trustScore < 0) trustScore = 0; // Negative thodi hoga
+
+  res.status(200).json({
+    success: true,
+    data: {
+      score: trustScore,
+      overdueCount: overdueAllocations,
+      totalActive: activeAllocations
+    }
+  });
+});
