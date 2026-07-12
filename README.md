@@ -9,8 +9,21 @@ This project is split into a robust Node.js backend (with Prisma, Postgres, Mong
 ## 🛠️ Tech Stack
 
 - **Backend:** Node.js, Express, Prisma, Postgres, MongoDB (for logs), Redis (for caching & pub/sub)
-- **Frontend:** React, Vite, Tailwind CSS, React Router
+- **Frontend:** React, Vite, Tailwind CSS (v4), Recharts (for analytics), React Router
 - **Infra:** Docker & Docker Compose
+
+---
+
+## 🚀 Note for Team A (Dev A Handover)
+
+Bhai (Team A), agar tum Dev B ka code apne paas pull kar rahe ho, toh dhyan rakhna maine kuch nayi libraries add ki hain (jaise `recharts` for charts, aur Tailwind ka naya `@tailwindcss/postcss` config). Tumhe apna code chalane ke liye bas ye step zaroor karna hai:
+
+1. **Backend me `npm install` zaroor chalana:** Maine `express-mongo-sanitize` aur baaki security/redis packages set kiye hain.
+2. **Frontend me `npm install` zaroor chalana:** Taaki `recharts` aur Tailwind ka postcss error na aaye.
+3. **Prisma Generate:** Agar backend boot karte time `@prisma/client` ka error aaye, toh `npx prisma generate` chala lena.
+4. **.env File:** Make sure tumhare backend folder me `.env` file rakhi ho (copy from `.env.example`) kyuki maine Postgres, Mongo aur Redis teeno initialize kar diye hain.
+
+Baaki saare Dev B ke API endpoints aur Frontend Pages (Dashboard, Reports, Activity Logs) fully ready hain bina kisi hardcoding ke! 😎
 
 ---
 

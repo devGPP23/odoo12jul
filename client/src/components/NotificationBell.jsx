@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../utils/api';
 import { io } from 'socket.io-client';
 
@@ -115,6 +116,16 @@ const NotificationBell = () => {
                 </div>
               ))
             )}
+          </div>
+          
+          <div className="p-2 border-t bg-gray-50 text-center rounded-b-lg">
+            <Link 
+              to="/notifications" 
+              onClick={() => setGhantiKhuliHai(false)}
+              className="text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+            >
+              Sabhi notifications dekho
+            </Link>
           </div>
         </div>
       )}

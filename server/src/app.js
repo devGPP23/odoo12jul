@@ -45,9 +45,12 @@ const bookingsRoutes = require('./modules/bookings/bookings.routes');
 // ─── Phase 3B routes (Dev B - gp) ───
 const notificationsRoutes = require('./modules/notifications/notifications.routes');
 const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
+const activityRoutes = require('./modules/activity/activity.routes');
+const reportsRoutes = require('./modules/reports/reports.routes');
 
 // Phase 3B Listeners
 require('./modules/notifications/notifications.events');
+require('./modules/bookings/bookings.events');
 
 // Cron jobs
 const {
@@ -69,6 +72,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/', apiLimiter);
 app.use(sanitizer);
+// Removed duplicate declaration
 app.use(xssSanitizer);
 app.use(activityLogger);
 
@@ -97,6 +101,8 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit-cycles', auditsRoutes);
 app.use('/api/audit-items', auditItemsRoutes);
+app.use('/api/activity-logs', activityRoutes);
+app.use('/api/reports', reportsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });

@@ -17,6 +17,9 @@ import AssetDirectory from './pages/Assets/AssetDirectory'
 import AssetDetail from './pages/Assets/AssetDetail'
 import BookingPage from './pages/Bookings/BookingPage'
 import DashboardPage from './pages/Dashboard/DashboardPage'
+import NotificationsPage from './pages/Notifications/NotificationsPage'
+import ActivityLogPage from './pages/ActivityLog/ActivityLogPage'
+import ReportsPage from './pages/Reports/ReportsPage'
 
 function App() {
   return (
@@ -53,6 +56,11 @@ function App() {
               <Route path="/maintenance" element={<Maintenance />} />
 
               <Route path="/audits" element={<div>Audits Page</div>} />
+
+              {/* Notification & Logs */}
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/activity-logs" element={<ActivityLogPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
             </Route>
           </Route>
         </Routes>
