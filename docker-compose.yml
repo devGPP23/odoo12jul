@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Primary DB for Core Entities
+  postgres:
+    image: postgres:15-alpine
+    container_name: assetflow-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: assetflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # MongoDB For Notifications and Activity Logs
+  mongodb:
+    image: mongo:6-jammy
+    container_name: assetflow-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+  # Redis For Cache, Sessions, Pub/Sub
+  redis:
+    image: redis:7-alpine
+    container_name: assetflow-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:

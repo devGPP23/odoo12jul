@@ -1,7 +1,3 @@
-// ─── AssetFlow — Prisma Schema ───
-// All core relational entities live here.
-// Booking overlap constraint is added via a hand-edited migration (see migrations/).
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,304 +7,332 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ────────────────────────────────────────────────────────────
-// Enums
-// ────────────────────────────────────────────────────────────
-
-enum EmployeeRole {
-  ADMIN
-  ASSET_MANAGER
-  DEPARTMENT_HEAD
-  EMPLOYEE
+enum Role {
+  admin
+  asset_manager
+  dept_head
+  employee
 }
 
-enum EntityStatus {
-  ACTIVE
-  INACTIVE
+enum UserStatus {
+  active
+  inactive
 }
 
-enum AssetStatus {
-  AVAILABLE
-  ALLOCATED
-  RESERVED
-  UNDER_MAINTENANCE
-  LOST
-  RETIRED
-  DISPOSED
+enum DeptStatus {
+  active
+  inactive
 }
 
 enum AssetCondition {
-  NEW
-  GOOD
-  FAIR
-  POOR
-  DAMAGED
+  new_condition
+  good
+  fair
+  poor
+  damaged
+}
+
+enum AssetStatus {
+  available
+  allocated
+  reserved
+  under_maintenance
+  lost
+  retired
+  disposed
 }
 
 enum AllocationStatus {
-  ACTIVE
-  RETURNED
-  TRANSFERRED
+  active
+  returned
+  transferred
+  overdue
 }
 
 enum TransferStatus {
-  REQUESTED
-  APPROVED
-  REJECTED
+  pending
+  approved
+  rejected
 }
 
 enum BookingStatus {
-  UPCOMING
-  ONGOING
-  COMPLETED
-  CANCELLED
-}
-
-enum MaintenanceStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  TECHNICIAN_ASSIGNED
-  IN_PROGRESS
-  RESOLVED
+  upcoming
+  ongoing
+  completed
+  cancelled
 }
 
 enum MaintenancePriority {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
+  low
+  medium
+  high
+  critical
 }
 
-enum AuditScopeType {
-  DEPARTMENT
-  LOCATION
+enum MaintenanceStatus {
+  pending
+  approved
+  rejected
+  assigned
+  in_progress
+  resolved
 }
 
 enum AuditCycleStatus {
-  OPEN
-  CLOSED
+  open
+  in_progress
+  closed
 }
 
-enum AuditResult {
-  VERIFIED
-  MISSING
-  DAMAGED
+enum AuditItemResult {
+  pending
+  verified
+  missing
+  damaged
 }
 
-// ────────────────────────────────────────────────────────────
-// Models
-// ────────────────────────────────────────────────────────────
+enum AuditScopeType {
+  department
+  location
+}
+
+// ──────────────────────────────────────
+// Core Tables
+// ──────────────────────────────────────
 
 model Department {
-  id                 String       @id @default(uuid())
-  name               String       @unique
-  parentDepartmentId String?      @map("parent_department_id")
-  parentDepartment   Department?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
-  childDepartments   Department[] @relation("DepartmentHierarchy")
-  headEmployeeId     String?      @map("head_employee_id")
-  headEmployee       Employee?    @relation("DepartmentHead", fields: [headEmployeeId], references: [id])
-  status             EntityStatus @default(ACTIVE)
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
+  id              Int           @id @default(autoincrement())
+  name            String        @unique @db.VarChar(100)
+  parentDeptId    Int?          @map("parent_dept_id")
+  parentDept      Department?   @relation("DeptHierarchy", fields: [parentDeptId], references: [id], onDelete: SetNull)
+  childDepts      Department[]  @relation("DeptHierarchy")
+  headId          Int?          @map("head_id")
+  head            User?         @relation("DeptHead", fields: [headId], references: [id], onDelete: SetNull)
+  status          DeptStatus    @default(active)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  // Reverse relations
-  employees              Employee[]       @relation("EmployeeDepartment")
-  departmentAllocations  Allocation[]     @relation("DepartmentHolder")
+  employees       User[]        @relation("DeptEmployees")
+  assets          Asset[]
+  allocations     Allocation[]  @relation("AllocDept")
 
   @@map("departments")
 }
 
-model Employee {
-  id           String       @id @default(uuid())
-  name         String
-  email        String       @unique
-  passwordHash String       @map("password_hash")
-  departmentId String?      @map("department_id")
-  department   Department?  @relation("EmployeeDepartment", fields: [departmentId], references: [id])
-  role         EmployeeRole @default(EMPLOYEE)
-  status       EntityStatus @default(ACTIVE)
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
+model User {
+  id              Int           @id @default(autoincrement())
+  name            String        @db.VarChar(100)
+  email           String        @unique @db.VarChar(255)
+  passwordHash    String        @map("password_hash") @db.VarChar(255)
+  role            Role          @default(employee)
+  roleVersion     Int           @default(0) @map("role_version")
+  departmentId    Int?          @map("department_id")
+  department      Department?   @relation("DeptEmployees", fields: [departmentId], references: [id], onDelete: SetNull)
+  status          UserStatus    @default(active)
+  resetToken      String?       @map("reset_token") @db.VarChar(255)
+  resetTokenExp   DateTime?     @map("reset_token_exp")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  // Reverse relations
-  headOfDepartments       Department[]         @relation("DepartmentHead")
-  employeeAllocations     Allocation[]         @relation("EmployeeHolder")
-  bookings                Booking[]
-  maintenanceRaised       MaintenanceRequest[] @relation("MaintenanceRequester")
-  maintenanceAssigned     MaintenanceRequest[] @relation("MaintenanceTechnician")
-  maintenanceApproved     MaintenanceRequest[] @relation("MaintenanceApprover")
-  transfersRequested      TransferRequest[]    @relation("TransferRequester")
-  transfersApproved       TransferRequest[]    @relation("TransferApprover")
-  transfersFrom           TransferRequest[]    @relation("TransferFrom")
-  transfersTo             TransferRequest[]    @relation("TransferTo")
-  auditAssignments        AuditAssignment[]
-  auditItemsMarked        AuditItem[]
+  headOfDepts     Department[]  @relation("DeptHead")
+  allocationsHeld Allocation[]  @relation("AllocUser")
+  allocatedBy     Allocation[]  @relation("AllocBy")
+  bookings        Booking[]
+  maintenanceRaised    MaintenanceRequest[] @relation("MaintRaisedBy")
+  maintenanceApproved  MaintenanceRequest[] @relation("MaintApprovedBy")
+  maintenanceTech      MaintenanceRequest[] @relation("MaintTech")
+  transfersFrom   TransferRequest[] @relation("TransFrom")
+  transfersTo     TransferRequest[] @relation("TransTo")
+  transfersReqBy  TransferRequest[] @relation("TransReqBy")
+  transfersApprBy TransferRequest[] @relation("TransApprBy")
+  auditCyclesCreated AuditCycle[]
+  auditAssignments   AuditAssignment[]
+  auditItemsMarked   AuditItem[]
 
-  @@map("employees")
+  @@map("users")
 }
 
 model AssetCategory {
-  id           String   @id @default(uuid())
-  name         String   @unique
-  customFields Json?    @map("custom_fields") @db.JsonB
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id              Int           @id @default(autoincrement())
+  name            String        @unique @db.VarChar(100)
+  description     String?
+  customFields    Json          @default("{}") @map("custom_fields")
+  status          DeptStatus    @default(active)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  assets Asset[]
+  assets          Asset[]
 
   @@map("asset_categories")
 }
 
 model Asset {
-  id              String         @id @default(uuid())
-  name            String
-  categoryId      String         @map("category_id")
-  category        AssetCategory  @relation(fields: [categoryId], references: [id])
-  assetTag        String         @unique @map("asset_tag")
-  serialNumber    String?        @unique @map("serial_number")
-  acquisitionDate DateTime?      @map("acquisition_date")
-  acquisitionCost Decimal?       @map("acquisition_cost") @db.Decimal(12, 2)
-  condition       AssetCondition @default(NEW)
-  location        String?
-  photoUrl        String?        @map("photo_url")
-  isBookable      Boolean        @default(false) @map("is_bookable")
-  status          AssetStatus    @default(AVAILABLE)
-  qrCode          String?        @map("qr_code")
-  createdAt       DateTime       @default(now()) @map("created_at")
-  updatedAt       DateTime       @updatedAt @map("updated_at")
+  id                Int           @id @default(autoincrement())
+  name              String        @db.VarChar(200)
+  assetTag          String        @unique @map("asset_tag") @db.VarChar(20)
+  serialNumber      String?       @map("serial_number") @db.VarChar(100)
+  categoryId        Int           @map("category_id")
+  category          AssetCategory @relation(fields: [categoryId], references: [id])
+  departmentId      Int?          @map("department_id")
+  department        Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  acquisitionDate   DateTime?     @map("acquisition_date") @db.Date
+  acquisitionCost   Decimal?      @map("acquisition_cost") @db.Decimal(12, 2)
+  condition         AssetCondition @default(new_condition)
+  location          String?       @db.VarChar(200)
+  status            AssetStatus   @default(available)
+  isBookable        Boolean       @default(false) @map("is_bookable")
+  photoUrl          String?       @map("photo_url") @db.VarChar(500)
+  notes             String?
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
 
-  // Reverse relations
-  allocations         Allocation[]
-  bookings            Booking[]
-  maintenanceRequests MaintenanceRequest[]
-  auditItems          AuditItem[]
-  transferRequests    TransferRequest[]
+  allocations       Allocation[]
+  bookings          Booking[]
+  maintenanceReqs   MaintenanceRequest[]
+  auditItems        AuditItem[]
+  transferRequests  TransferRequest[]
 
+  @@index([status])
+  @@index([categoryId])
+  @@index([departmentId])
   @@map("assets")
 }
 
-/// Tracks who holds an asset. Polymorphic holder: exactly one of
-/// employeeHolderId / departmentHolderId must be non-null.
-/// CHECK constraint added via raw migration.
 model Allocation {
-  id                 String           @id @default(uuid())
-  assetId            String           @map("asset_id")
-  asset              Asset            @relation(fields: [assetId], references: [id])
-  employeeHolderId   String?          @map("employee_holder_id")
-  employeeHolder     Employee?        @relation("EmployeeHolder", fields: [employeeHolderId], references: [id])
-  departmentHolderId String?          @map("department_holder_id")
-  departmentHolder   Department?      @relation("DepartmentHolder", fields: [departmentHolderId], references: [id])
-  allocatedAt        DateTime         @default(now()) @map("allocated_at")
-  expectedReturnDate DateTime?        @map("expected_return_date")
-  actualReturnDate   DateTime?        @map("actual_return_date")
-  status             AllocationStatus @default(ACTIVE)
-  checkinNotes       String?          @map("checkin_notes")
-  createdAt          DateTime         @default(now()) @map("created_at")
-  updatedAt          DateTime         @updatedAt @map("updated_at")
+  id                    Int              @id @default(autoincrement())
+  assetId               Int              @map("asset_id")
+  asset                 Asset            @relation(fields: [assetId], references: [id])
+  employeeHolderId      Int?             @map("employee_holder_id")
+  employeeHolder        User?            @relation("AllocUser", fields: [employeeHolderId], references: [id])
+  departmentHolderId    Int?             @map("department_holder_id")
+  departmentHolder      Department?      @relation("AllocDept", fields: [departmentHolderId], references: [id])
+  allocatedById         Int              @map("allocated_by")
+  allocatedBy           User             @relation("AllocBy", fields: [allocatedById], references: [id])
+  allocationDate        DateTime         @default(now()) @map("allocation_date")
+  expectedReturnDate    DateTime?        @map("expected_return_date") @db.Date
+  actualReturnDate      DateTime?        @map("actual_return_date") @db.Date
+  returnCondition       String?          @map("return_condition") @db.VarChar(30)
+  returnNotes           String?          @map("return_notes")
+  status                AllocationStatus @default(active)
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+
+  transferRequests      TransferRequest[]
 
   @@map("allocations")
 }
 
 model TransferRequest {
-  id            String         @id @default(uuid())
-  assetId       String         @map("asset_id")
-  asset         Asset          @relation(fields: [assetId], references: [id])
-  fromHolderId  String         @map("from_holder_id")
-  fromHolder    Employee       @relation("TransferFrom", fields: [fromHolderId], references: [id])
-  toHolderId    String         @map("to_holder_id")
-  toHolder      Employee       @relation("TransferTo", fields: [toHolderId], references: [id])
-  requestedById String         @map("requested_by_id")
-  requestedBy   Employee       @relation("TransferRequester", fields: [requestedById], references: [id])
-  approvedById  String?        @map("approved_by_id")
-  approvedBy    Employee?      @relation("TransferApprover", fields: [approvedById], references: [id])
-  status        TransferStatus @default(REQUESTED)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
+  id              Int             @id @default(autoincrement())
+  assetId         Int             @map("asset_id")
+  asset           Asset           @relation(fields: [assetId], references: [id])
+  allocationId    Int             @map("allocation_id")
+  allocation      Allocation      @relation(fields: [allocationId], references: [id])
+  fromUserId      Int             @map("from_user_id")
+  fromUser        User            @relation("TransFrom", fields: [fromUserId], references: [id])
+  toUserId        Int             @map("to_user_id")
+  toUser          User            @relation("TransTo", fields: [toUserId], references: [id])
+  requestedById   Int             @map("requested_by")
+  requestedBy     User            @relation("TransReqBy", fields: [requestedById], references: [id])
+  approvedById    Int?            @map("approved_by")
+  approvedBy      User?           @relation("TransApprBy", fields: [approvedById], references: [id])
+  status          TransferStatus  @default(pending)
+  notes           String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
   @@map("transfer_requests")
 }
 
-/// Booking uses startTime/endTime instead of tsrange for Prisma compatibility.
-/// The EXCLUDE USING gist constraint is added via a hand-edited migration using
-/// tstzrange(start_time, end_time) to reject overlapping bookings at the DB layer.
 model Booking {
-  id         String        @id @default(uuid())
-  assetId    String        @map("asset_id")
-  asset      Asset         @relation(fields: [assetId], references: [id])
-  bookedById String        @map("booked_by_id")
-  bookedBy   Employee      @relation(fields: [bookedById], references: [id])
-  startTime  DateTime      @map("start_time")
-  endTime    DateTime      @map("end_time")
-  status     BookingStatus @default(UPCOMING)
-  createdAt  DateTime      @default(now()) @map("created_at")
-  updatedAt  DateTime      @updatedAt @map("updated_at")
+  id              Int             @id @default(autoincrement())
+  assetId         Int             @map("asset_id")
+  asset           Asset           @relation(fields: [assetId], references: [id])
+  bookedById      Int             @map("booked_by")
+  bookedBy        User            @relation(fields: [bookedById], references: [id])
+  startTime       DateTime        @map("start_time")
+  endTime         DateTime        @map("end_time")
+  status          BookingStatus   @default(upcoming)
+  purpose         String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
+  @@index([assetId])
+  @@index([bookedById])
   @@map("bookings")
 }
 
 model MaintenanceRequest {
-  id               String              @id @default(uuid())
-  assetId          String              @map("asset_id")
-  asset            Asset               @relation(fields: [assetId], references: [id])
-  raisedById       String              @map("raised_by_id")
-  raisedBy         Employee            @relation("MaintenanceRequester", fields: [raisedById], references: [id])
-  issueDescription String              @map("issue_description")
-  priority         MaintenancePriority @default(MEDIUM)
-  photoUrl         String?             @map("photo_url")
-  status           MaintenanceStatus   @default(PENDING)
-  approvedById     String?             @map("approved_by_id")
-  approvedBy       Employee?           @relation("MaintenanceApprover", fields: [approvedById], references: [id])
-  technicianId     String?             @map("technician_id")
-  technician       Employee?           @relation("MaintenanceTechnician", fields: [technicianId], references: [id])
-  resolvedAt       DateTime?           @map("resolved_at")
-  createdAt        DateTime            @default(now()) @map("created_at")
-  updatedAt        DateTime            @updatedAt @map("updated_at")
+  id                Int                 @id @default(autoincrement())
+  assetId           Int                 @map("asset_id")
+  asset             Asset               @relation(fields: [assetId], references: [id])
+  raisedById        Int                 @map("raised_by")
+  raisedBy          User                @relation("MaintRaisedBy", fields: [raisedById], references: [id])
+  description       String
+  priority          MaintenancePriority @default(medium)
+  status            MaintenanceStatus   @default(pending)
+  previousAssetStatus String?           @map("previous_asset_status") @db.VarChar(30)
+  approvedById      Int?                @map("approved_by")
+  approvedBy        User?               @relation("MaintApprovedBy", fields: [approvedById], references: [id])
+  technicianId      Int?                @map("technician_id")
+  technician        User?               @relation("MaintTech", fields: [technicianId], references: [id])
+  photoUrl          String?             @map("photo_url") @db.VarChar(500)
+  resolvedAt        DateTime?           @map("resolved_at")
+  resolutionNotes   String?             @map("resolution_notes")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
 
+  @@index([assetId])
+  @@index([status])
   @@map("maintenance_requests")
 }
 
 model AuditCycle {
-  id         String           @id @default(uuid())
-  scopeType  AuditScopeType   @map("scope_type")
-  scopeValue String           @map("scope_value")
-  dateStart  DateTime         @map("date_start")
-  dateEnd    DateTime         @map("date_end")
-  status     AuditCycleStatus @default(OPEN)
-  createdAt  DateTime         @default(now()) @map("created_at")
-  updatedAt  DateTime         @updatedAt @map("updated_at")
+  id              Int              @id @default(autoincrement())
+  name            String           @db.VarChar(200)
+  scopeType       AuditScopeType   @map("scope_type")
+  scopeValue      String           @map("scope_value") @db.VarChar(200)
+  startDate       DateTime         @map("start_date") @db.Date
+  endDate         DateTime         @map("end_date") @db.Date
+  status          AuditCycleStatus @default(open)
+  createdById     Int              @map("created_by")
+  createdBy       User             @relation(fields: [createdById], references: [id])
+  closedAt        DateTime?        @map("closed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  assignments AuditAssignment[]
-  items       AuditItem[]
+  assignments     AuditAssignment[]
+  items           AuditItem[]
 
   @@map("audit_cycles")
 }
 
 model AuditAssignment {
-  id           String     @id @default(uuid())
-  auditCycleId String     @map("audit_cycle_id")
-  auditCycle   AuditCycle @relation(fields: [auditCycleId], references: [id])
-  auditorId    String     @map("auditor_id")
-  auditor      Employee   @relation(fields: [auditorId], references: [id])
-  createdAt    DateTime   @default(now()) @map("created_at")
+  id              Int        @id @default(autoincrement())
+  auditCycleId    Int        @map("audit_cycle_id")
+  auditCycle      AuditCycle @relation(fields: [auditCycleId], references: [id], onDelete: Cascade)
+  auditorId       Int        @map("auditor_id")
+  auditor         User       @relation(fields: [auditorId], references: [id])
+  createdAt       DateTime   @default(now()) @map("created_at")
 
   @@unique([auditCycleId, auditorId])
   @@map("audit_assignments")
 }
 
 model AuditItem {
-  id           String       @id @default(uuid())
-  auditCycleId String       @map("audit_cycle_id")
-  auditCycle   AuditCycle   @relation(fields: [auditCycleId], references: [id])
-  assetId      String       @map("asset_id")
-  asset        Asset        @relation(fields: [assetId], references: [id])
-  auditorId    String       @map("auditor_id")
-  auditor      Employee     @relation(fields: [auditorId], references: [id])
-  result       AuditResult?
-  notes        String?
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
+  id              Int             @id @default(autoincrement())
+  auditCycleId    Int             @map("audit_cycle_id")
+  auditCycle      AuditCycle      @relation(fields: [auditCycleId], references: [id], onDelete: Cascade)
+  assetId         Int             @map("asset_id")
+  asset           Asset           @relation(fields: [assetId], references: [id])
+  auditorId       Int?            @map("auditor_id")
+  auditor         User?           @relation(fields: [auditorId], references: [id])
+  result          AuditItemResult @default(pending)
+  notes           String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
   @@unique([auditCycleId, assetId])
+  @@index([auditCycleId])
   @@map("audit_items")
 }
