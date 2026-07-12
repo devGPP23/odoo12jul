@@ -1,5 +1,6 @@
 const eventBus = require('../../core/eventBus');
 const Notification = require('../../models/mongo/Notification');
+const { getRedisPub } = require('../../config/redis');
 
   // YAR BACKEND SE JO BHI EVENT AAYEGI VO SAB MONGODB ME SAVE KARENGE
  // Event Handlers for Notifications
@@ -68,7 +69,7 @@ eventBus.on('entity.action', async (eventPayload) => {
     }
 
     // Create Notification in MongoDB
-    await Notification.create({
+    const nayaNotification = await Notification.create({
       userId: String(targetUserId),
       type: notificationType,
       message,
@@ -77,7 +78,18 @@ eventBus.on('entity.action', async (eventPayload) => {
       metadata: data || {}
     });
 
-    console.log(`[Notification Handler] Successfully saved notification for ${type}`);
+    console.log(`[Notification Handler] MongoDB me save ho gaya for ${type}`);
+
+    // Redis Pub/Sub ke zariye Socket.io tak bhejo (Real-time push)
+    try {
+      const pub = getRedisPub();
+      if (pub) {
+        pub.publish(`notifications:${targetUserId}`, JSON.stringify(nayaNotification));
+        console.log(`[Notification Handler] Redis channel pe bhej diya: notifications:${targetUserId}`);
+      }
+    } catch (redisErr) {
+      console.error('[Notification Handler] Redis publish fail ho gaya bhai:', redisErr);
+    }
 
   } catch (err) {
     console.error('[Notification Handler] Error saving notification:', err);
