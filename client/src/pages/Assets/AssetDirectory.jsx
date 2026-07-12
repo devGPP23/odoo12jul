@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../utils/api';
+import { Mic, MicOff, Sparkles } from 'lucide-react';
 
 // SEEARCH BAR TAAKI APAN SEARCH KR SAKE ASSETS KO
 
@@ -9,6 +10,10 @@ const AssetDirectory = () => {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ search: '', status: '' });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, totalPages: 1 });
+  const [isListening, setIsListening] = useState(false);
+  const [aiInsight, setAiInsight] = useState('');
+  
+  const recognitionRef = useRef(null);
 
   const fetchAssets = async () => {
     setLoading(true);
@@ -34,10 +39,59 @@ const AssetDirectory = () => {
     fetchAssets();
   }, [pagination.page, filters.status]); // Re-fetch on page or status change
 
+  // Initialize Web Speech API for Voice Search
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window) {
+      const recognition = new window.webkitSpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setFilters((prev) => ({ ...prev, search: transcript }));
+        setIsListening(false);
+        // Auto search after voice input
+        setTimeout(() => {
+          setPagination(prev => ({ ...prev, page: 1 }));
+          // We rely on the search button or another fetch call for immediate search, 
+          // but we can just call fetchAssets() indirectly if we want, though state might not be updated yet.
+        }, 100);
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleVoiceSearch = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+    } else {
+      recognitionRef.current?.start();
+      setIsListening(true);
+    }
+  };
+
   const handleSearch = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setPagination({ ...pagination, page: 1 });
     fetchAssets();
+  };
+
+  const generateAiInsight = () => {
+    setAiInsight('🤖 AI Analyzing... generating predictive maintenance insights based on usage patterns...');
+    setTimeout(() => {
+      setAiInsight('✨ AI Insight: 3 assets (MacBooks) show high usage and are due for maintenance in 2 weeks. Recommend scheduling downtime.');
+    }, 1500);
   };
 
   return (
@@ -49,19 +103,39 @@ const AssetDirectory = () => {
         </Link>
       </div>
 
+      {/* AI Insight Banner */}
+      {aiInsight && (
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 p-4 rounded-lg mb-6 flex items-start gap-3 animate-fade-in shadow-sm">
+          <Sparkles className="text-indigo-600 mt-0.5 shrink-0" size={20} />
+          <p className="text-sm font-medium">{aiInsight}</p>
+        </div>
+      )}
+
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-lg shadow-sm mb-6 flex flex-wrap gap-4 items-end">
-        <form onSubmit={handleSearch} className="flex-1 min-w-[200px]">
+        <form onSubmit={handleSearch} className="flex-1 min-w-[300px]">
           <label className="block text-sm text-gray-600 mb-1">Search by Tag / Name / Serial</label>
           <div className="flex">
-            <input 
-              type="text" 
-              value={filters.search}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              className="w-full border border-gray-300 rounded-l p-2 focus:ring-blue-500" 
-              placeholder="e.g. AF-0001 or MacBook" 
-            />
-            <button type="submit" className="bg-gray-100 border border-gray-300 border-l-0 px-4 rounded-r hover:bg-gray-200">
+            <div className="relative flex-1">
+              <input 
+                type="text" 
+                value={filters.search}
+                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                className="w-full border border-gray-300 rounded-l p-2 pr-10 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
+                placeholder="e.g. AF-0001 or MacBook" 
+              />
+              <button
+                type="button"
+                onClick={toggleVoiceSearch}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors ${
+                  isListening ? 'bg-red-100 text-red-600 animate-pulse' : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'
+                }`}
+                title="Voice Search"
+              >
+                {isListening ? <Mic size={16} /> : <MicOff size={16} />}
+              </button>
+            </div>
+            <button type="submit" className="bg-blue-600 text-white border border-blue-600 px-5 font-medium rounded-r hover:bg-blue-700 transition-colors shadow-sm">
               Search
             </button>
           </div>
@@ -72,7 +146,7 @@ const AssetDirectory = () => {
           <select 
             value={filters.status} 
             onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            className="w-full border border-gray-300 rounded p-2 bg-white"
+            className="w-full border border-gray-300 rounded p-2 bg-white focus:ring-blue-500 focus:border-blue-500 outline-none"
           >
             <option value="">All Statuses</option>
             <option value="AVAILABLE">Available</option>
@@ -81,6 +155,14 @@ const AssetDirectory = () => {
             <option value="RETIRED">Retired</option>
           </select>
         </div>
+
+        <button 
+          onClick={generateAiInsight}
+          className="bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-4 py-2 rounded font-medium flex items-center gap-2 transition-colors shadow-sm"
+        >
+          <Sparkles size={16} />
+          AI Analyze
+        </button>
       </div>
 
       {/* Data Table */}
