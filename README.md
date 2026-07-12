@@ -1,103 +1,79 @@
-# AssetFlow — Enterprise Asset & Resource Management System
+# AssetFlow 🚀
 
-## Architecture
+Hey there! Welcome to **AssetFlow**, a centralized ERP platform built to simplify how organizations track, allocate, and maintain their physical assets and shared resources.
 
-**Polyglot persistence** — three databases, each earning its place:
+This project is split into a robust Node.js backend (with Prisma, Postgres, Mongo, and Redis) and a fast React + Vite frontend.
 
-| Store | What lives there | Why |
-|---|---|---|
-| **PostgreSQL** (Prisma) | Departments, Employees, Assets, Allocations, Transfers, Bookings, Maintenance, Audits | Relational integrity, transactions, `EXCLUDE USING gist` for booking overlaps |
-| **MongoDB** (Mongoose) | Notifications, Activity Logs | High-write, schema-loose, no FK needed |
-| **Redis** (ioredis) | Dashboard KPI cache, session blacklist, real-time pub/sub | Sub-ms reads, TTL for tokens, Socket.io bridge |
+---
 
-## Quick Start
+## 🛠️ Tech Stack
 
-```bash
-# 1. Copy env and fill in your DB credentials
-cp .env.example .env
+- **Backend:** Node.js, Express, Prisma, Postgres, MongoDB (for logs), Redis (for caching & pub/sub)
+- **Frontend:** React, Vite, Tailwind CSS, React Router
+- **Infra:** Docker & Docker Compose
 
-# 2. Install dependencies
-cd server && npm install
+---
 
-# 3. Generate Prisma client
-npx prisma generate
+## 📖 How to Run the Project (Working Manual)
 
-# 4. Run migrations
-npx prisma migrate dev
+Follow these simple steps to get everything up and running on your local machine.
 
-# 5. Apply manual constraints (booking overlap, allocation uniqueness)
-#    Connect to your Postgres DB and run:
-#    server/prisma/migrations/manual_constraints/migration.sql
+### Step 1: Start the Databases
+We use Docker to make database setup painless. You don't need to install Postgres or Mongo manually!
+1. Make sure you have Docker Desktop installed and running.
+2. Open your terminal in the root folder of this project.
+3. Run the following command:
+   ```bash
+   docker-compose up -d
+   ```
+   *(This will start Postgres, MongoDB, and Redis in the background).*
 
-# 6. Seed the database (creates Admin + demo data)
-node prisma/seed.js
+### Step 2: Setup the Backend
+Now let's get the Node server running.
+1. Open a terminal and navigate to the `server` folder:
+   ```bash
+   cd server
+   ```
+2. Install the dependencies:
+   ```bash
+   npm install
+   ```
+3. Copy the `.env.example` file to `.env` (if you haven't already). The default Docker URLs are already set!
+4. Sync the database schema using Prisma:
+   ```bash
+   npx prisma db push
+   ```
+5. Seed the database with some initial dummy data (Optional but recommended):
+   ```bash
+   npm run seed
+   ```
+6. Start the server:
+   ```bash
+   npm run dev
+   ```
+   *(The backend should now be running on `http://localhost:5000`)*
 
-# 7. Start the server
-npm run dev
-```
+### Step 3: Setup the Frontend
+Finally, let's start the React app.
+1. Open a **new** terminal and navigate to the `client` folder:
+   ```bash
+   cd client
+   ```
+2. Install the dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the Vite development server:
+   ```bash
+   npm run dev
+   ```
+   *(The frontend should now be running on `http://localhost:5173`)*
 
-## Default Credentials (from seed)
+---
 
-| Role | Email | Password |
-|---|---|---|
-| Admin | admin@assetflow.com | admin123 |
-| Asset Manager | manager@assetflow.com | manager123 |
-| Department Head | enghead@assetflow.com | head123 |
-| Employee | priya@assetflow.com | employee123 |
+## 💡 Troubleshooting
 
-## API Endpoints
+- **Redis Port Error:** If Docker complains that port `6379` is already in use, it means you have a local Redis running. Either stop your local Redis, or change the port mapping in `docker-compose.yml` to `"6380:6379"` and update your `.env` accordingly.
+- **Prisma Error:** If you get a Prisma client error, make sure your Postgres container is fully running before you execute `npx prisma db push`.
 
-### Auth
-- `POST /api/auth/signup` — Employee-only (role hardcoded)
-- `POST /api/auth/login` — JWT issuance
-- `GET /api/auth/me` — Current user
-- `POST /api/auth/logout` — Token blacklist
-
-### Organization Setup (Admin)
-- `CRUD /api/departments`
-- `POST /api/departments/:id/assign-head`
-- `CRUD /api/asset-categories`
-- `GET /api/employees` — Directory
-- `POST /api/employees/:id/promote` — **Only** role assignment endpoint
-
-### Assets
-- `POST /api/assets` — Register (auto-generates AF-XXXX tag)
-- `GET /api/assets` — Search/filter
-- `GET /api/assets/:id/history` — Combined allocation + maintenance history
-
-### Allocation & Transfer
-- `POST /api/allocations` — SELECT FOR UPDATE conflict check
-- `POST /api/allocations/:id/return`
-- `POST /api/allocations/transfers` — Request transfer
-- `PUT /api/allocations/transfers/:id/approve|reject`
-
-### Booking
-- `POST /api/bookings` — DB exclusion constraint rejects overlaps
-- `PUT /api/bookings/:id/cancel|reschedule`
-
-### Maintenance
-- `POST /api/maintenance-requests` — Raise
-- `PUT /api/maintenance-requests/:id/approve|reject|assign-technician|start|resolve`
-
-### Audits
-- `POST /api/audit-cycles` — Create
-- `POST /api/audit-cycles/:id/assign-auditors`
-- `POST /api/audit-cycles/:id/close` — Atomic: Missing → Lost cascade
-
-### Dashboard & Reports
-- `GET /api/dashboard/kpis` — Redis-cached
-- `GET /api/dashboard/overdue`
-- `GET /api/reports/*`
-
-### Notifications & Logs
-- `GET /api/notifications`
-- `GET /api/activity-logs`
-
-## Key Design Decisions
-
-1. **Asset.status is never written directly** — all transitions go through `stateMachine.js`
-2. **Role assignment only in one place** — `POST /api/employees/:id/promote` (Admin only)
-3. **Booking overlap enforced by DB** — `EXCLUDE USING gist` constraint, not app code
-4. **Double-allocation race-safe** — `SELECT ... FOR UPDATE` + partial unique index
-5. **Mongo writes never block Postgres** — fire-and-forget after commit
-6. **Audit close is atomic** — single transaction for Missing → Lost cascade
+Enjoy building and managing assets with AssetFlow! 🎉
