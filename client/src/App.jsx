@@ -7,6 +7,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import OrgSetup from './pages/OrgSetup/OrgSetup'
+import Allocations from './pages/Allocations/Allocations'
 
 function App() {
   return (
@@ -30,7 +31,7 @@ function App() {
               
               {/* Placeholder for other routes */}
               <Route path="/assets" element={<div>Assets Page (Dev B)</div>} />
-              <Route path="/allocations" element={<div>Allocations Page</div>} />
+              <Route path="/allocations" element={<Allocations />} />
               <Route path="/maintenance" element={<div>Maintenance Page</div>} />
               <Route path="/audits" element={<div>Audits Page</div>} />
             </Route>

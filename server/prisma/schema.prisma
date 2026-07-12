@@ -49,6 +49,7 @@ enum AllocationStatus {
   ACTIVE
   RETURNED
   TRANSFERRED
+  OVERDUE
 }
 
 enum TransferStatus {

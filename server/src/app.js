@@ -18,11 +18,22 @@ const errorHandler = require('./middleware/errorHandler');
 
 const eventBus = require('./core/eventBus');
 
-// Import all Phase 1A routes
+// Phase 1A routes
 const authRoutes = require('./modules/auth/auth.routes');
 const departmentsRoutes = require('./modules/departments/departments.routes');
 const categoriesRoutes = require('./modules/categories/categories.routes');
 const employeesRoutes = require('./modules/employees/employees.routes');
+
+// Phase 2A routes
+const allocationsRoutes = require('./modules/allocations/allocations.routes');
+const transfersRoutes   = require('./modules/transfers/transfers.routes');
+
+// Cron jobs
+const {
+  startOverdueScanner,
+  startBookingStatusUpdater,
+  startBookingReminder,
+} = require('./jobs/overdueScanner');
 
 const app = express();
 const server = http.createServer(app);
@@ -59,6 +70,10 @@ app.use('/api/departments', departmentsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/employees', employeesRoutes);
 
+// Phase 2A
+app.use('/api/allocations', allocationsRoutes);
+app.use('/api/transfers',   transfersRoutes);
+
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
 });
@@ -81,6 +96,11 @@ async function start() {
     server.listen(config.port, () => {
       console.log(`\n✅ API running on http://localhost:${config.port}`);
       console.log(`   Client URL:  ${config.clientUrl}\n`);
+
+      // ── Start Phase 2A cron jobs ─────────────────────────────────
+      startOverdueScanner();        // every 15 min: ACTIVE → OVERDUE
+      startBookingStatusUpdater();  // every 5 min:  booking status transitions
+      startBookingReminder();       // every 30 min: upcoming booking reminders
     });
   } catch (err) {
     console.error('❌ Startup me error aa gaya:', err);
