@@ -32,9 +32,11 @@ app.use(cors({ origin: config.clientUrl, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// api rate limiting and noSQL injection rokne ke liye
+// api rate limiting and noSQL/XSS injection rokne ke liye
 app.use('/api/', apiLimiter);
-app.use(sanitizer());
+app.use(sanitizer()); // NoSQL sanitizer
+const xssSanitizer = require('./middleware/sanitize'); // XSS sanitizer
+app.use(xssSanitizer);
 
 // Har state change pe Mongo me log daalne ka jugaad
 app.use(activityLogger);

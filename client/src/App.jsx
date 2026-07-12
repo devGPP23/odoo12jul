@@ -1,22 +1,17 @@
-import { Routes, Route } from 'react-router-dom';
-import ProtectedRoute from './components/ProtectedRoute';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
+import React from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 
 function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      
-      {/* Protected Routes */}
-      <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<Dashboard />} />
-      </Route>
-      
-      {/* Fallback */}
-      <Route path="*" element={<div className="p-8">404 - Not Found</div>} />
-    </Routes>
-  );
+    <BrowserRouter>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-indigo-600 mb-4">AssetFlow ERP</h1>
+          <p className="text-lg text-gray-600">Frontend scaffolding successful!</p>
+        </div>
+      </div>
+    </BrowserRouter>
+  )
 }
 
-export default App;
+export default App
