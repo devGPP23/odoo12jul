@@ -1,97 +1,90 @@
+/**
+ * Allocations Controller — Phase 2A
+ *
+ * Thin controller layer: extracts HTTP params, delegates to service,
+ * formats the response. All business logic lives in allocations.service.js.
+ */
+
 const allocationsService = require('./allocations.service');
 const asyncHandler = require('../../utils/asyncHandler');
 
 class AllocationsController {
-  // Allocate asset
+  /**
+   * POST /api/allocations
+   * Allocate an asset to an employee or department.
+   */
   allocate = asyncHandler(async (req, res) => {
-    const { assetId, employeeHolderId, departmentHolderId, expectedReturnDate } = req.body;
+    const result = await allocationsService.allocate(req.body, req.user);
 
-    const allocation = await allocationsService.allocate({
-      assetId,
-      employeeHolderId,
-      departmentHolderId,
-      expectedReturnDate
-    });
+    if (result.alreadyExisted) {
+      return res.status(200).json({
+        success: true,
+        message: 'Asset was already allocated to this holder (idempotent response).',
+        data: result.allocation,
+      });
+    }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: 'Asset allocated successfully',
-      data: allocation
-    });
-  });
-
-  // Return asset
-  returnAllocation = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const { condition, return_condition, notes } = req.body;
-
-    const targetCondition = return_condition || condition;
-
-    const result = await allocationsService.returnAllocation(id, {
-      condition: targetCondition ? targetCondition.toUpperCase() : undefined,
-      notes
-    });
-
-    res.status(200).json({
-      success: true,
-      message: 'Asset returned successfully',
+      message: 'Asset allocated successfully.',
       data: result.allocation,
-      suggestMaintenance: result.suggestMaintenance
     });
   });
 
-  // Create transfer request
-  createTransferRequest = asyncHandler(async (req, res) => {
-    const { 
-      assetId, asset_id, 
-      fromHolderId, from_holder_id, from_user, fromUserId,
-      toHolderId, to_holder_id, to_user, toUserId 
-    } = req.body;
-    const requestedById = req.user.id; // From JWT
+  /**
+   * POST /api/allocations/:id/return
+   * Return an asset from an active or overdue allocation.
+   */
+  returnAllocation = asyncHandler(async (req, res) => {
+    const result = await allocationsService.returnAllocation(
+      req.params.id,
+      req.body,
+      req.user
+    );
 
-    const targetAssetId = assetId || asset_id;
-    const targetFromHolderId = fromHolderId || from_holder_id || from_user || fromUserId;
-    const targetToHolderId = toHolderId || to_holder_id || to_user || toUserId;
+    const message = result.suggestMaintenance
+      ? 'Asset returned. Asset condition is damaged — consider raising a maintenance request.'
+      : 'Asset returned successfully.';
 
-    const transferRequest = await allocationsService.createTransferRequest({
-      assetId: targetAssetId,
-      fromHolderId: targetFromHolderId,
-      toHolderId: targetToHolderId,
-      requestedById
-    });
-
-    res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: 'Transfer request created successfully',
-      data: transferRequest
+      message,
+      data: result,
     });
   });
 
-  // Approve transfer request
-  approveTransfer = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const approvedById = req.user.id; // From JWT
-
-    const transferRequest = await allocationsService.approveTransferRequest(id, approvedById);
-
-    res.status(200).json({
-      success: true,
-      message: 'Transfer request approved successfully',
-      data: transferRequest
-    });
+  /**
+   * GET /api/allocations/:id
+   * Fetch full allocation details.
+   */
+  getById = asyncHandler(async (req, res) => {
+    const result = await allocationsService.getById(req.params.id);
+    return res.status(200).json({ success: true, data: result });
   });
 
-  // Reject transfer request
-  rejectTransfer = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const rejectedById = req.user.id; // From JWT
+  /**
+   * GET /api/allocations
+   * List allocations with filters and pagination.
+   * DEPT_HEADs are automatically scoped to their own department (AL6).
+   */
+  list = asyncHandler(async (req, res) => {
+    const filters = {
+      assetId:      req.query.assetId,
+      employeeId:   req.query.employeeId,
+      departmentId: req.query.departmentId,
+      status:       req.query.status,
+    };
+    const pagination = {
+      page:  parseInt(req.query.page,  10) || 1,
+      limit: parseInt(req.query.limit, 10) || 20,
+    };
 
-    const transferRequest = await allocationsService.rejectTransferRequest(id, rejectedById);
+    const result = await allocationsService.list(filters, pagination, req.user);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: 'Transfer request rejected successfully',
-      data: transferRequest
+      data: result.data,
+      pagination: result.pagination,
     });
   });
 }

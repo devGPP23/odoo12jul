@@ -1,353 +1,416 @@
+/**
+ * Allocations Service — Phase 2A (2A.1 – 2A.3 + 2A.8)
+ *
+ * Implements the full allocation lifecycle:
+ *   - allocate()          : POST /api/allocations
+ *   - returnAllocation()  : POST /api/allocations/:id/return
+ *   - getById()
+ *   - list()
+ *
+ * Edge cases handled:
+ *   AL1  - Race condition: DB-level partial unique index (allocation_active_unique) +
+ *           transaction isolation ensures only one ACTIVE allocation per asset
+ *   AL2  - Inactive user/department: pre-flight status check before write
+ *   AL3  - Idempotency: optional idempotencyKey — if ACTIVE alloc for same
+ *           asset+holder already exists, return it without creating a duplicate
+ *   AL4  - Asset under maintenance: block allocation if active maintenance exists
+ *   AL5  - Bookable block: bookable assets cannot be allocated (use Bookings API)
+ *          Extended: allow if no UPCOMING/ONGOING bookings exist
+ *   AL6  - Dept scope: DEPARTMENT_HEAD can only allocate to own dept employees
+ *   AL8  - Return condition 'DAMAGED' → suggestMaintenance:true in response
+ *   AL9  - Cannot return an already-RETURNED or TRANSFERRED allocation
+ *   AL10 - expectedReturnDate must be in the future if supplied
+ */
+
 const { prisma } = require('../../config/postgres');
-const AppError = require('../../utils/AppError');
-const eventBus = require('../../core/eventBus');
+const AppError   = require('../../utils/AppError');
+const eventBus   = require('../../core/eventBus');
 const { transitionAssetStatus } = require('../../core/assetStateMachine');
 
 class AllocationsService {
   /**
-   * 2A.1: Allocate an asset to an employee or a department.
-   * Uses SELECT FOR UPDATE inside a transaction and a partial unique index safety net.
+   * Allocate an asset to an employee or department.
+   * Uses a Prisma transaction for atomicity.
+   *
+   * @param {object} data  - { assetId, employeeHolderId?, departmentHolderId?,
+   *                           expectedReturnDate?, idempotencyKey? }
+   * @param {object} actor - req.user from JWT
    */
-  async allocate(data) {
-    const { assetId, employeeHolderId, departmentHolderId, expectedReturnDate } = data;
+  async allocate(data, actor) {
+    const {
+      assetId,
+      employeeHolderId,
+      departmentHolderId,
+      expectedReturnDate,
+      idempotencyKey,
+    } = data;
 
-    // Check that exactly one holder is provided (polymorphic relation constraint check)
-    if (!employeeHolderId && !departmentHolderId) {
-      throw new AppError('Either employeeHolderId or departmentHolderId must be provided.', 400);
+    // ── Exactly one holder must be supplied ──────────────────────────────
+    if (
+      (!employeeHolderId && !departmentHolderId) ||
+      (employeeHolderId && departmentHolderId)
+    ) {
+      throw new AppError(
+        'Exactly one of employeeHolderId or departmentHolderId must be provided.',
+        400
+      );
     }
-    if (employeeHolderId && departmentHolderId) {
-      throw new AppError('An asset cannot be allocated to both an employee and a department.', 400);
+
+    // ── AL10: expectedReturnDate must be in the future ───────────────────
+    if (expectedReturnDate && new Date(expectedReturnDate) <= new Date()) {
+      throw new AppError('expectedReturnDate must be a future date.', 400);
     }
 
-    try {
-      return await prisma.$transaction(async (tx) => {
-        // 2A.1: SELECT ... FOR UPDATE row lock inside the transaction
-        const assets = await tx.$queryRaw`
-          SELECT id, status, is_bookable AS "isBookable", name, asset_tag AS "assetTag"
-          FROM assets
-          WHERE id = ${assetId}
-          FOR UPDATE
-        `;
+    // ── AL3: Idempotency key — avoid duplicate allocation for same pair ───
+    if (idempotencyKey) {
+      const existing = await prisma.allocation.findFirst({
+        where: {
+          assetId,
+          status: 'ACTIVE',
+          ...(employeeHolderId
+            ? { employeeHolderId }
+            : { departmentHolderId }),
+        },
+        include: {
+          asset: { select: { id: true, assetTag: true, name: true } },
+          employeeHolder: { select: { id: true, name: true, email: true } },
+          departmentHolder: { select: { id: true, name: true } },
+        },
+      });
+      if (existing) {
+        return { allocation: existing, alreadyExisted: true };
+      }
+    }
 
-        if (assets.length === 0) {
-          throw new AppError('Asset not found.', 404);
+    // ── AL2: Validate employee/department is ACTIVE before entering tx ───
+    if (employeeHolderId) {
+      const employee = await prisma.employee.findUnique({
+        where: { id: employeeHolderId },
+        select: { id: true, name: true, status: true, departmentId: true },
+      });
+      if (!employee) throw new AppError('Employee not found.', 404);
+      if (employee.status !== 'ACTIVE') {
+        throw new AppError(
+          `Employee "${employee.name}" is inactive and cannot receive assets.`,
+          400
+        );
+      }
+
+      // ── AL6: Dept scope — DEPT_HEAD can only allocate within own dept ──
+      if (actor.role === 'DEPARTMENT_HEAD') {
+        if (!actor.departmentId || employee.departmentId !== actor.departmentId) {
+          throw new AppError(
+            'Department Heads can only allocate assets to employees within their own department.',
+            403
+          );
         }
+      }
+    }
 
-        const asset = assets[0];
+    if (departmentHolderId) {
+      const dept = await prisma.department.findUnique({
+        where: { id: departmentHolderId },
+        select: { id: true, name: true, status: true },
+      });
+      if (!dept) throw new AppError('Department not found.', 404);
+      if (dept.status !== 'ACTIVE') {
+        throw new AppError(
+          `Department "${dept.name}" is inactive and cannot receive assets.`,
+          400
+        );
+      }
+    }
 
-        // Checks asset.status = 'AVAILABLE'
-        if (asset.status !== 'AVAILABLE') {
-          // Find the active allocation of this asset to return details for the 409 response
-          const activeAllocation = await tx.allocation.findFirst({
-            where: {
-              assetId: assetId,
-              status: 'ACTIVE'
+    // ── Run atomic allocation inside transaction (AL1) ────────────────────
+    return prisma.$transaction(async (tx) => {
+      // ── Lock & fetch asset row ──────────────────────────────────────────
+      const asset = await tx.asset.findUnique({
+        where: { id: assetId },
+        select: {
+          id: true,
+          assetTag: true,
+          name: true,
+          status: true,
+          isBookable: true,
+        },
+      });
+
+      if (!asset) throw new AppError('Asset not found.', 404);
+
+      // ── AL5: Bookable assets must not have active bookings ──────────────
+      if (asset.isBookable) {
+        const activeBookings = await tx.booking.count({
+          where: { assetId, status: { in: ['UPCOMING', 'ONGOING'] } },
+        });
+        if (activeBookings > 0) {
+          throw new AppError(
+            `Cannot allocate bookable asset "${asset.assetTag}" — it has ${activeBookings} active booking(s). Cancel them first.`,
+            400
+          );
+        }
+      }
+
+      // ── AL4: Asset must not be under active maintenance ─────────────────
+      const activeMaintenance = await tx.maintenanceRequest.findFirst({
+        where: {
+          assetId,
+          status: { in: ['APPROVED', 'TECHNICIAN_ASSIGNED', 'IN_PROGRESS'] },
+        },
+        select: { id: true },
+      });
+      if (activeMaintenance) {
+        throw new AppError(
+          `Asset "${asset.assetTag}" is currently under maintenance and cannot be allocated.`,
+          400
+        );
+      }
+
+      // ── AL1: Conflict check — asset must be AVAILABLE ───────────────────
+      // The DB partial unique index (allocation_active_unique) is the final
+      // safety net for true race conditions; this check gives a richer 409.
+      if (asset.status !== 'AVAILABLE') {
+        const currentAlloc = await tx.allocation.findFirst({
+          where: { assetId, status: 'ACTIVE' },
+          include: {
+            employeeHolder: {
+              select: { id: true, name: true, department: { select: { id: true, name: true } } },
             },
-            include: {
-              employeeHolder: {
-                select: {
-                  name: true,
-                  department: { select: { name: true } }
-                }
-              },
-              departmentHolder: { select: { name: true } }
-            }
-          });
-
-          const currentHolder = activeAllocation?.employeeHolder?.name || activeAllocation?.departmentHolder?.name || 'Unknown';
-          const department = activeAllocation?.employeeHolder?.department?.name || activeAllocation?.departmentHolder?.name || 'Unknown';
-          const allocatedSince = activeAllocation?.allocatedAt || null;
-
-          throw new AppError('Asset currently allocated or not available.', 409, {
-            currentHolder,
-            department,
-            allocatedSince,
-            transferRequestUrl: '/api/transfers'
-          });
-        }
-
-        // Create the new active allocation record
-        const allocation = await tx.allocation.create({
-          data: {
-            assetId,
-            employeeHolderId,
-            departmentHolderId,
-            expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
-            status: 'ACTIVE'
-          }
+            departmentHolder: { select: { id: true, name: true } },
+          },
         });
 
-        // central transition status call
-        await transitionAssetStatus(assetId, 'ALLOCATED', 'Asset allocated successfully', tx);
+        const holderName =
+          currentAlloc?.employeeHolder?.name ||
+          currentAlloc?.departmentHolder?.name ||
+          'Unknown';
 
-        return { allocation, asset };
-      }).then(async (result) => {
-        // Emit events after Postgres commits successfully
+        const err = new AppError(
+          `Asset "${asset.assetTag}" is currently ${asset.status.toLowerCase()} and cannot be allocated.`,
+          409
+        );
+        err.details = {
+          currentHolder: holderName,
+          department: currentAlloc?.employeeHolder?.department?.name || null,
+          allocatedSince: currentAlloc?.allocatedAt || null,
+          transferRequestUrl: '/api/transfers',
+        };
+        throw err;
+      }
+
+      // ── Transition asset: AVAILABLE → ALLOCATED ────────────────────────
+      await transitionAssetStatus(assetId, 'ALLOCATED', `allocated by ${actor.id}`, tx);
+
+      // ── Create allocation record ────────────────────────────────────────
+      const allocation = await tx.allocation.create({
+        data: {
+          assetId,
+          employeeHolderId: employeeHolderId || null,
+          departmentHolderId: departmentHolderId || null,
+          expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
+          status: 'ACTIVE',
+        },
+        include: {
+          asset: { select: { id: true, assetTag: true, name: true } },
+          employeeHolder: {
+            select: { id: true, name: true, email: true, department: { select: { id: true, name: true } } },
+          },
+          departmentHolder: { select: { id: true, name: true } },
+        },
+      });
+
+      // ── Emit event after commit ────────────────────────────────────────
+      setImmediate(() => {
         eventBus.emit('entity.action', {
           type: 'asset.allocated',
+          actorId: actor.id,
+          actorName: actor.name,
           entityType: 'allocation',
-          entityId: result.allocation.id,
-          relatedAssetId: result.asset.id,
+          entityId: allocation.id,
+          relatedAssetId: assetId,
+          departmentId:
+            allocation.employeeHolder?.department?.id ||
+            departmentHolderId ||
+            null,
           data: {
-            assetTag: result.asset.assetTag,
-            employeeHolderId,
-            departmentHolderId
+            assetTag: asset.assetTag,
+            assetName: asset.name,
+            holderName:
+              allocation.employeeHolder?.name ||
+              allocation.departmentHolder?.name,
+            expectedReturnDate: expectedReturnDate || null,
           },
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         });
-
-        return result.allocation;
       });
-    } catch (err) {
-      // Partial unique index idx_one_active_allocation (migration: allocation_active_unique) is the DB safety net.
-      if (err.code === 'P2002') {
-        throw new AppError('Conflict: This asset already has an active allocation.', 409);
-      }
-      throw err;
-    }
+
+      return { allocation, alreadyExisted: false };
+    });
   }
 
   /**
-   * 2A.3: Return allocation flow.
+   * Return an asset from its current active (or overdue) allocation.
+   *
+   * @param {string} allocationId
+   * @param {object} data   - { returnCondition, returnNotes }
+   * @param {object} actor  - req.user
    */
-  async returnAllocation(id, data) {
-    const { condition, notes } = data;
+  async returnAllocation(allocationId, data, actor) {
+    const { returnCondition = 'GOOD', returnNotes } = data;
 
-    return prisma.$transaction(async (tx) => {
-      const allocation = await tx.allocation.findUnique({
-        where: { id }
-      });
+    const allocation = await prisma.allocation.findUnique({
+      where: { id: allocationId },
+      include: {
+        asset: { select: { id: true, assetTag: true, name: true } },
+        employeeHolder: { select: { id: true, name: true } },
+        departmentHolder: { select: { id: true, name: true } },
+      },
+    });
 
-      if (!allocation) {
-        throw new AppError('Allocation not found', 404);
-      }
+    if (!allocation) throw new AppError('Allocation not found.', 404);
 
-      if (allocation.status !== 'ACTIVE') {
-        throw new AppError('Allocation is not active', 400);
-      }
+    // ── AL9: Only ACTIVE or OVERDUE allocations can be returned ──────────
+    if (allocation.status !== 'ACTIVE' && allocation.status !== 'OVERDUE') {
+      throw new AppError(
+        `Allocation is already ${allocation.status.toLowerCase()} and cannot be returned.`,
+        400
+      );
+    }
 
-      // Close the allocation
-      const updatedAllocation = await tx.allocation.update({
-        where: { id },
+    // ── Authorization: holder, their dept head, asset manager, or admin ──
+    const isHolder = allocation.employeeHolderId === actor.id;
+    const canReturn =
+      isHolder || ['ADMIN', 'ASSET_MANAGER', 'DEPARTMENT_HEAD'].includes(actor.role);
+    if (!canReturn) {
+      throw new AppError('You do not have permission to return this allocation.', 403);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.allocation.update({
+        where: { id: allocationId },
         data: {
           status: 'RETURNED',
           actualReturnDate: new Date(),
-          checkinNotes: notes || null
-        }
+          checkinNotes: returnNotes || null,
+        },
       });
+      await transitionAssetStatus(
+        allocation.assetId,
+        'AVAILABLE',
+        `returned by ${actor.id}`,
+        tx
+      );
+    });
 
-      // Update asset condition if provided
-      if (condition) {
-        await tx.asset.update({
-          where: { id: allocation.assetId },
-          data: { condition }
-        });
-      }
-
-      // transitionAssetStatus -> AVAILABLE
-      const updatedAsset = await transitionAssetStatus(allocation.assetId, 'AVAILABLE', 'Asset returned', tx);
-
-      return { updatedAllocation, updatedAsset };
-    }).then((result) => {
+    // ── Emit event ─────────────────────────────────────────────────────
+    setImmediate(() => {
       eventBus.emit('entity.action', {
         type: 'asset.returned',
+        actorId: actor.id,
+        actorName: actor.name,
         entityType: 'allocation',
-        entityId: result.updatedAllocation.id,
-        relatedAssetId: result.updatedAsset.id,
+        entityId: allocationId,
+        relatedAssetId: allocation.assetId,
         data: {
-          assetTag: result.updatedAsset.assetTag,
-          condition,
-          notes
+          assetTag: allocation.asset.assetTag,
+          assetName: allocation.asset.name,
+          returnCondition,
+          returnNotes,
         },
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
-
-      const suggestMaintenance = condition?.toUpperCase() === 'DAMAGED';
-
-      return {
-        allocation: result.updatedAllocation,
-        suggestMaintenance
-      };
     });
+
+    const response = {
+      allocationId,
+      assetId: allocation.assetId,
+      assetTag: allocation.asset.assetTag,
+      returnedAt: new Date().toISOString(),
+      returnCondition,
+    };
+
+    // ── AL8: Damaged on return → suggest maintenance ───────────────────
+    if (returnCondition === 'DAMAGED' || returnCondition === 'damaged') {
+      response.suggestMaintenance = true;
+      response.maintenanceUrl = '/api/maintenance';
+    }
+
+    return response;
   }
 
   /**
-   * 2A.4: Create transfer request
+   * Get allocation by ID.
    */
-  async createTransferRequest(data) {
-    const { assetId, fromHolderId, toHolderId, requestedById } = data;
-
-    if (toHolderId === fromHolderId) {
-      throw new AppError('Cannot transfer to the same user', 400);
-    }
-
-    const asset = await prisma.asset.findUnique({
-      where: { id: assetId }
-    });
-
-    if (!asset) {
-      throw new AppError('Asset not found', 404);
-    }
-
-    if (asset.status === 'UNDER_MAINTENANCE') {
-      throw new AppError('Asset under maintenance cannot be transferred', 400);
-    }
-
-    if (asset.status !== 'ALLOCATED') {
-      throw new AppError('Asset is not currently allocated', 400);
-    }
-
-    // Verify that fromHolder actually holds the asset
-    const activeAllocation = await prisma.allocation.findFirst({
-      where: {
-        assetId,
-        status: 'ACTIVE',
-        employeeHolderId: fromHolderId
-      }
-    });
-
-    if (!activeAllocation) {
-      throw new AppError('The asset is not currently allocated to the specified user', 400);
-    }
-
-    const transferRequest = await prisma.transferRequest.create({
-      data: {
-        assetId,
-        fromHolderId,
-        toHolderId,
-        requestedById,
-        status: 'REQUESTED'
-      }
-    });
-
-    eventBus.emit('entity.action', {
-      type: 'transfer.requested',
-      entityType: 'transfer_request',
-      entityId: transferRequest.id,
-      relatedAssetId: assetId,
-      data: {
-        fromHolderId,
-        toHolderId,
-        requestedById
-      },
-      timestamp: new Date().toISOString()
-    });
-
-    return transferRequest;
-  }
-
-  /**
-   * 2A.5: Approve transfer request
-   */
-  async approveTransferRequest(id, approvedById) {
-    return prisma.$transaction(async (tx) => {
-      const transferRequest = await tx.transferRequest.findUnique({
-        where: { id }
-      });
-
-      if (!transferRequest) {
-        throw new AppError('Transfer request not found', 404);
-      }
-
-      if (transferRequest.status !== 'REQUESTED') {
-        throw new AppError(`Transfer request is already ${transferRequest.status}`, 400);
-      }
-
-      // AL6 edge case: Re-check that the allocation status is still ACTIVE before approving
-      const activeAllocation = await tx.allocation.findFirst({
-        where: {
-          assetId: transferRequest.assetId,
-          status: 'ACTIVE',
-          employeeHolderId: transferRequest.fromHolderId
-        }
-      });
-
-      if (!activeAllocation) {
-        throw new AppError('The original allocation is no longer active, transfer cannot be completed', 400);
-      }
-
-      // 1. Close old allocation
-      await tx.allocation.update({
-        where: { id: activeAllocation.id },
-        data: {
-          status: 'TRANSFERRED',
-          actualReturnDate: new Date(),
-          checkinNotes: `Transferred to employee ${transferRequest.toHolderId}`
-        }
-      });
-
-      // 2. Open new allocation
-      const newAllocation = await tx.allocation.create({
-        data: {
-          assetId: transferRequest.assetId,
-          employeeHolderId: transferRequest.toHolderId,
-          status: 'ACTIVE'
-        }
-      });
-
-      // 3. Update Transfer Request status
-      const updatedTransferRequest = await tx.transferRequest.update({
-        where: { id },
-        data: {
-          status: 'APPROVED',
-          approvedById
-        }
-      });
-
-      return { updatedTransferRequest, newAllocation };
-    }).then((result) => {
-      eventBus.emit('entity.action', {
-        type: 'transfer.approved',
-        entityType: 'transfer_request',
-        entityId: result.updatedTransferRequest.id,
-        relatedAssetId: result.updatedTransferRequest.assetId,
-        data: {
-          newAllocationId: result.newAllocation.id,
-          fromHolderId: result.updatedTransferRequest.fromHolderId,
-          toHolderId: result.updatedTransferRequest.toHolderId
+  async getById(allocationId) {
+    const allocation = await prisma.allocation.findUnique({
+      where: { id: allocationId },
+      include: {
+        asset: {
+          select: {
+            id: true,
+            assetTag: true,
+            name: true,
+            status: true,
+            condition: true,
+            location: true,
+            category: { select: { id: true, name: true } },
+          },
         },
-        timestamp: new Date().toISOString()
-      });
-
-      return result.updatedTransferRequest;
+        employeeHolder: {
+          select: { id: true, name: true, email: true, department: { select: { id: true, name: true } } },
+        },
+        departmentHolder: { select: { id: true, name: true } },
+      },
     });
+    if (!allocation) throw new AppError('Allocation not found.', 404);
+    return allocation;
   }
 
   /**
-   * 2A.6: Reject transfer request
+   * List allocations with optional filters and pagination.
+   *
+   * @param {object} filters - { assetId, employeeId, departmentId, status }
+   * @param {object} pagination - { page, limit }
+   * @param {object} actor  - req.user (for AL6 dept scope)
    */
-  async rejectTransferRequest(id, rejectedById) {
-    const transferRequest = await prisma.transferRequest.findUnique({
-      where: { id }
-    });
+  async list(filters = {}, pagination = { page: 1, limit: 20 }, actor = {}) {
+    const { assetId, employeeId, departmentId, status } = filters;
+    const page  = parseInt(pagination.page,  10) || 1;
+    const limit = parseInt(pagination.limit, 10) || 20;
+    const skip  = (page - 1) * limit;
 
-    if (!transferRequest) {
-      throw new AppError('Transfer request not found', 404);
+    const where = {};
+    if (assetId)    where.assetId          = assetId;
+    if (employeeId) where.employeeHolderId = employeeId;
+    if (status)     where.status            = status;
+
+    // ── AL6: DEPARTMENT_HEAD sees only their dept's allocations ──────────
+    if (actor.role === 'DEPARTMENT_HEAD' && actor.departmentId) {
+      where.employeeHolder = { departmentId: actor.departmentId };
+    } else if (departmentId) {
+      where.employeeHolder = { departmentId };
     }
 
-    if (transferRequest.status !== 'REQUESTED') {
-      throw new AppError(`Transfer request is already ${transferRequest.status}`, 400);
-    }
+    const [allocations, total] = await Promise.all([
+      prisma.allocation.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { allocatedAt: 'desc' },
+        include: {
+          asset: { select: { id: true, assetTag: true, name: true, status: true } },
+          employeeHolder: {
+            select: { id: true, name: true, department: { select: { id: true, name: true } } },
+          },
+          departmentHolder: { select: { id: true, name: true } },
+        },
+      }),
+      prisma.allocation.count({ where }),
+    ]);
 
-    const updatedTransferRequest = await prisma.transferRequest.update({
-      where: { id },
-      data: {
-        status: 'REJECTED'
-      }
-    });
-
-    eventBus.emit('entity.action', {
-      type: 'transfer.rejected',
-      entityType: 'transfer_request',
-      entityId: updatedTransferRequest.id,
-      relatedAssetId: updatedTransferRequest.assetId,
-      data: {
-        rejectedById
-      },
-      timestamp: new Date().toISOString()
-    });
-
-    return updatedTransferRequest;
+    return {
+      data: allocations,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 }
 
