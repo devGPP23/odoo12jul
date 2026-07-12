@@ -1,73 +1,60 @@
-/**
- * Centralized error handler.
- * Catches all errors, including:
- * - AppError (operational, expected)
- * - Prisma unique constraint violations (P2002)
- * - Postgres exclusion constraint errors (23P01 — booking overlaps)
- * - Validation errors from express-validator
- * - Unexpected errors (500)
- */
+// Centralized Error Handler
+// Saare errors yahan catch honge (Prisma, Postgres 23P01, JWT, etc.)
 
 const config = require('../config');
 
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, _next) {
-  // Default to 500
   let statusCode = err.statusCode || 500;
   let message = err.message || 'Internal server error';
   let details = err.details || null;
 
-  // ── Prisma errors ──────────────────────────────────────────
+  // Prisma Errors
   if (err.code === 'P2002') {
-    // Unique constraint violation
     statusCode = 409;
     const target = err.meta?.target;
-    message = `A record with this ${target ? target.join(', ') : 'value'} already exists.`;
+    message = `Ye record pehle se exist karta hai: ${target ? target.join(', ') : 'value'}`;
   }
 
   if (err.code === 'P2025') {
-    // Record not found
     statusCode = 404;
-    message = 'Record not found.';
+    message = 'Record nahi mila bhai.';
   }
 
   if (err.code === 'P2003') {
-    // Foreign key constraint failed
     statusCode = 400;
-    message = 'Referenced record does not exist.';
+    message = 'Jisko reference kar rahe ho wo exist nahi karta.';
   }
 
-  // ── Postgres exclusion constraint (booking overlap) ────────
-  // Prisma wraps raw query errors; the Postgres error code 23P01 appears
-  // in the error message or in err.code for raw queries.
+  // Postgres 23P01 (Booking overlap check using GiST)
   if (
     err.code === '23P01' ||
     (err.message && err.message.includes('exclusion constraint'))
   ) {
     statusCode = 409;
-    message = 'Booking conflict: the requested time slot overlaps with an existing booking.';
+    message = 'Booking conflict hai, time slot overlap ho raha hai.';
   }
 
-  // ── JWT errors ─────────────────────────────────────────────
+  // JWT Errors
   if (err.name === 'JsonWebTokenError') {
     statusCode = 401;
-    message = 'Invalid token.';
+    message = 'Token galat hai.';
   }
   if (err.name === 'TokenExpiredError') {
     statusCode = 401;
-    message = 'Token has expired.';
+    message = 'Token expire ho gaya.';
   }
 
-  // ── express-validator errors ───────────────────────────────
+  // validation errors (express-validator)
   if (err.type === 'validation') {
     statusCode = 422;
-    message = 'Validation failed.';
+    message = 'Validation fail ho gaya.';
     details = err.errors;
   }
 
-  // ── Log server errors ─────────────────────────────────────
+  // 500 errors pe terminal pe log marna zaroori hai
   if (statusCode >= 500) {
-    console.error('🔥 Server Error:', {
+    console.error('🔥 Server phat gaya:', {
       message: err.message,
       stack: config.isDev ? err.stack : undefined,
       path: req.path,
@@ -75,7 +62,6 @@ function errorHandler(err, req, res, _next) {
     });
   }
 
-  // ── Response ──────────────────────────────────────────────
   res.status(statusCode).json({
     success: false,
     message,

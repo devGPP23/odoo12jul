@@ -1,29 +1,27 @@
-/**
- * Rate Limiter Middleware.
- * Uses express-rate-limit to protect against brute-force and DDoS.
- */
+// Rate Limiter
+// Spam aur DDoS rokne ke liye
 
 const rateLimit = require('express-rate-limit');
 
-// Standard API rate limiter (e.g., 100 requests per 15 minutes)
+// Normal API requests (100 per 15 min)
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per `window`
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: {
     success: false,
-    message: 'Too many requests from this IP, please try again after 15 minutes.',
+    message: 'Bhai aaram se, 15 minute baad try karna.',
   },
 });
 
-// Stricter rate limiter for auth endpoints (e.g., login/signup)
+// Auth endpoints ke liye strict limit (login spam rokne ke liye)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10, // Limit each IP to 10 auth requests per window
+  max: 10,
   message: {
     success: false,
-    message: 'Too many authentication attempts, please try again later.',
+    message: 'Bahut saare login attempts ho gaye, thodi der baad aana.',
   },
 });
 

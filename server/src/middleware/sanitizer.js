@@ -1,15 +1,11 @@
-/**
- * Input Sanitizer Middleware.
- * Uses express-mongo-sanitize to prevent NoSQL injection by removing keys
- * that start with $ or contain periods (.), which are used as operators in MongoDB.
- */
+// NoSQL Injection se bachne ka jugaad
+// req.body wagera me se $ aur . wale keys replace kar deta hai
 
 const mongoSanitize = require('express-mongo-sanitize');
 
 const sanitizer = mongoSanitize({
-  // Replace prohibited characters rather than dropping the field entirely
+  // Key drop karne ke bajaye underscore daal do
   replaceWith: '_',
-  // Executed on req.body, req.query, req.params, and req.headers
 });
 
 module.exports = sanitizer;
