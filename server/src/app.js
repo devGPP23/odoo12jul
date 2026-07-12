@@ -25,6 +25,7 @@ const categoriesRoutes = require('./modules/categories/categories.routes');
 const employeesRoutes = require('./modules/employees/employees.routes');
 const allocationsRoutes = require('./modules/allocations/allocations.routes');
 const transfersRoutes = require('./modules/allocations/transfers.routes');
+const maintenanceRoutes = require('./modules/maintenance/maintenance.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -62,6 +63,7 @@ app.use('/api/categories', categoriesRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/allocations', allocationsRoutes);
 app.use('/api/transfers', transfersRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found bhai.' });
