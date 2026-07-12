@@ -20,6 +20,29 @@ exports.registerAsset = async (assetData) => {
     nextTagNum = `AF-${String(count + 1).padStart(4, '0')}`;
   }
 
+  // Remove departmentId if it comes from the frontend (schema changed)
+  if (assetData.departmentId !== undefined) {
+    delete assetData.departmentId;
+  }
+
+  // Ensure category exists, else use a fallback
+  let validCategoryId = assetData.categoryId;
+  if (validCategoryId) {
+    const cat = await prisma.assetCategory.findUnique({ where: { id: validCategoryId } });
+    if (!cat) validCategoryId = null;
+  }
+  
+  if (!validCategoryId) {
+    let defaultCat = await prisma.assetCategory.findFirst();
+    if (!defaultCat) {
+      defaultCat = await prisma.assetCategory.create({ data: { name: 'General Assets' } });
+    }
+    validCategoryId = defaultCat.id;
+  }
+
+  // Override categoryId with guaranteed valid one
+  assetData.categoryId = validCategoryId;
+
   const newAsset = await prisma.asset.create({
     data: {
       ...assetData,

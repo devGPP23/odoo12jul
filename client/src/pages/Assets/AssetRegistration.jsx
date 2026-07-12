@@ -17,8 +17,9 @@ const AssetRegistration = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // In a real app, we would fetch categories from Dev A's category endpoint
-  // useEffect(() => { api.get('/categories').then(res => setCategories(res.data.data)) }, []);
+  useEffect(() => { 
+    api.get('/categories').then(res => setCategories(res.data.data)).catch(() => {});
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -83,11 +84,9 @@ const AssetRegistration = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-            <select name="categoryId" required value={formData.categoryId} onChange={handleChange}
+            <select name="categoryId" value={formData.categoryId} onChange={handleChange}
                     className="w-full border border-gray-300 rounded p-2 bg-white">
-              <option value="">Select Category</option>
-              <option value="cat-uuid-1">Laptops</option>
-              <option value="cat-uuid-2">Projectors</option>
+              <option value="">Select Category (Optional)</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
